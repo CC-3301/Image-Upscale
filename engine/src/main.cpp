@@ -11,6 +11,9 @@
 #include <filesystem>
 
 // 图像编解码：stb（jpg/png）+ libwebp（webp）
+// stb 为头文件库，实现必须在唯一包含点展开
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image.h"
 #include "stb_image_write.h"
 #include "webp_image.h"
@@ -222,6 +225,14 @@ int PATH_MAIN(int argc, wchar_t** argv)
     path_t parampath = sanitize_filepath(model_dir + PATHSTR("/noise0_scale2.0x_model.param"));
     path_t binpath = sanitize_filepath(model_dir + PATHSTR("/noise0_scale2.0x_model.bin"));
 
+    // 模型文件缺失时优雅报错（避免 ncnn 对空 FILE* 崩溃）
+    if (!filepath_is_readable(parampath) || !filepath_is_readable(binpath))
+    {
+        fprintf(stderr, "model files not found: %ls\n", parampath.c_str());
+        ncnn::destroy_gpu_instance();
+        return EXIT_INFER;
+    }
+
     // ---- 收集输入文件与输出路径（命名规则） ----
     bool input_is_dir = path_is_directory(inputpath);
 
@@ -288,9 +299,9 @@ int PATH_MAIN(int argc, wchar_t** argv)
         }
 
         input_files.push_back(inputpath);
-        // 命名规则：单文件 A.png -> 同目录 A-(模型名)-2.0x.jpg
+        // 命名规则：单文件 A.png -> 同目录 A-(模型名)-2.0x.jpg（后缀替换为输出格式）
         std::filesystem::path in(inputpath);
-        std::filesystem::path out_path = in.parent_path() / (in.filename().wstring() + L"-(" + model + L")-2.0x." + format);
+        std::filesystem::path out_path = in.parent_path() / (in.stem().wstring() + L"-(" + model + L")-2.0x." + format);
         output_files.push_back(out_path.wstring());
     }
 
@@ -384,6 +395,20 @@ int PATH_MAIN(int argc, wchar_t** argv)
     int infer_failures = 0;
     int io_failures = 0;
 
+    auto advance_progress = [&]() {
+        done++;
+        printf("progress %d/%d\n", done, total);
+        fflush(stdout);
+    };
+    auto fail = [&](bool inference_failure, const char* msg, const path_t& path) {
+        fprintf(stderr, "%s: %ls\n", msg, path.c_str());
+        if (inference_failure)
+            infer_failures++;
+        else
+            io_failures++;
+        advance_progress();
+    };
+
     for (int i = 0; i < total; i++)
     {
         const path_t& inpath = input_files[i];
@@ -398,11 +423,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
             FILE* fp = _wfopen(inpath.c_str(), L"rb");
             if (!fp)
             {
-                fprintf(stderr, "cannot open input: %ls\n", inpath.c_str());
-                io_failures++;
-                done++;
-                printf("progress %d/%d\n", done, total);
-                fflush(stdout);
+                fail(false, "cannot open input", inpath);
                 continue;
             }
 
@@ -415,12 +436,8 @@ int PATH_MAIN(int argc, wchar_t** argv)
 
             if (rd != (size_t)length)
             {
-                fprintf(stderr, "cannot read input: %ls\n", inpath.c_str());
+                fail(false, "cannot read input", inpath);
                 free(filedata);
-                io_failures++;
-                done++;
-                printf("progress %d/%d\n", done, total);
-                fflush(stdout);
                 continue;
             }
 
@@ -438,11 +455,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
 
         if (!pixeldata)
         {
-            fprintf(stderr, "decode image failed: %ls\n", inpath.c_str());
-            io_failures++;
-            done++;
-            printf("progress %d/%d\n", done, total);
-            fflush(stdout);
+            fail(false, "decode image failed", inpath);
             continue;
         }
 
@@ -452,11 +465,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
             unsigned char* rgb = flatten_alpha_to_white(pixeldata, w, h);
             if (!rgb)
             {
-                fprintf(stderr, "out of memory: %ls\n", inpath.c_str());
-                io_failures++;
-                done++;
-                printf("progress %d/%d\n", done, total);
-                fflush(stdout);
+                fail(false, "out of memory", inpath);
                 continue;
             }
             pixeldata = rgb;
@@ -492,11 +501,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
 
         if (pre != 0)
         {
-            fprintf(stderr, "inference failed: %ls\n", inpath.c_str());
-            infer_failures++;
-            done++;
-            printf("progress %d/%d\n", done, total);
-            fflush(stdout);
+            fail(true, "inference failed", inpath);
             continue;
         }
 
@@ -526,17 +531,15 @@ int PATH_MAIN(int argc, wchar_t** argv)
 
         if (!save_ok)
         {
-            fprintf(stderr, "encode image failed: %ls\n", outpath.c_str());
-            io_failures++;
+            fail(false, "encode image failed", outpath);
+            continue;
         }
-        else if (verbose)
+        if (verbose)
         {
             fprintf(stderr, "%ls -> %ls done\n", inpath.c_str(), outpath.c_str());
         }
 
-        done++;
-        printf("progress %d/%d\n", done, total);
-        fflush(stdout);
+        advance_progress();
     }
 
     printf("done\n");
