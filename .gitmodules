@@ -1,0 +1,6 @@
+[submodule "engine/third_party/ncnn"]
+	path = engine/third_party/ncnn
+	url = https://github.com/Tencent/ncnn
+[submodule "engine/third_party/libwebp"]
+	path = engine/third_party/libwebp
+	url = https://github.com/webmproject/libwebp

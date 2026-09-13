@@ -1,0 +1,15 @@
+# 构建产物
+build/
+out/
+
+# 模型文件（经 scripts/fetch-models.ps1 获取，不入库）
+models/
+
+# Python 测试
+__pycache__/
+.venv/
+.pytest_cache/
+tests/.baseline/
+
+# 临时产物
+*.log

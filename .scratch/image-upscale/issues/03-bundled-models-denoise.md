@@ -1,0 +1,16 @@
+# 03: 全部打包模型 + 降噪档位映射
+
+**Parent:** .scratch/image-upscale/spec.md
+
+**What to build:** 用户可以在全部内置模型间选择并使用降噪档位。打包模型清单补齐（cunet、Real-CUGAN pro 与 se、digital-art-4x、upconv_7_photo、realesr-general-x4v3），每个模型带元数据清单（显示名、架构、原生倍率列表、降噪映射、图像类型分组：漫画/插画/照片/通用），降噪档位（无/低/中/高）经映射表落到各模型专属参数。
+
+**Blocked by:** 01
+
+**Status:** ready-for-agent
+
+- [ ] 六组打包模型全部可被引擎加载推理，许可均为可再分发（MIT/BSD-3/Upscayl 官方允许项）
+- [ ] 模型元数据清单存在且被引擎使用；GUI 与引擎共享同一份
+- [ ] 降噪无/低/中/高按映射生效：waifu2x 系 noise 0-3、Real-CUGAN no-denoise/denoise1x-3x（保守档 -1 不暴露）、realesr-general-x4v3 连续强度取 0/0.33/0.66/1.0
+- [ ] 不支持降噪的模型（digital-art-4x 及未声明映射的模型）被请求降噪时明确报错
+- [ ] 倍率参数按模型原生倍率列表校验，不支持的倍率明确报错（如 digital-art-4x 仅 4x、CUGAN se 含 4x）
+- [ ] 每个模型的产物命名使用其显示名（括号包裹的模型名段）；应用降噪时命名含降噪段 `n1/n2/n3`（插在模型名段之后、倍率/尺寸段之前，无降噪不写）
