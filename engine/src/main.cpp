@@ -271,6 +271,65 @@ static unsigned char* gray_to_rgb(unsigned char* pixeldata, int w, int h, int c)
     return rgb;
 }
 
+
+// 伪影启发式估计（工单 06）：JPEG 块效应差分 → 规范降噪档位（0=无 1=低 2=中 3=高）
+// 仅看亮度近似（R 通道）以保持确定性；降采样限速
+static int estimate_denoise_level(const unsigned char* rgb, int w, int h)
+{
+    if (w < 9 || h < 2)
+        return 0;
+
+    const int step = std::max(1, w / 256);
+
+    // 水平块效应：8 像素块边界差分 vs 块内差分
+    double b_sum = 0, i_sum = 0;
+    long b_n = 0, i_n = 0;
+    for (int y = 0; y < h; y += step)
+    {
+        const unsigned char* row = rgb + (size_t)y * w * 3;
+        for (int x = 1; x < w; x += step)
+        {
+            int d = abs(row[(size_t)x * 3] - row[(size_t)(x - 1) * 3]);
+            if (x % 8 == 0) { b_sum += d; b_n++; }
+            else { i_sum += d; i_n++; }
+        }
+    }
+    double boundary = b_n ? b_sum / b_n : 0.0;
+    double inner = i_n ? i_sum / i_n : 0.0;
+    double blockiness = boundary - inner;
+    if (blockiness < 0)
+        blockiness = 0;
+
+    // 垂直方向同判（JPEG 8x8 块两轴皆有）
+    double bv_sum = 0, iv_sum = 0;
+    long bv_n = 0, iv_n = 0;
+    for (int y = 1; y < h; y += step)
+    {
+        const unsigned char* row = rgb + (size_t)y * w * 3;
+        const unsigned char* prev = row - (size_t)w * 3;
+        for (int x = 0; x < w; x += step)
+        {
+            int d = abs(row[(size_t)x * 3] - prev[(size_t)x * 3]);
+            if (y % 8 == 0) { bv_sum += d; bv_n++; }
+            else { iv_sum += d; iv_n++; }
+        }
+    }
+    double vboundary = bv_n ? bv_sum / bv_n : 0.0;
+    double vinner = iv_n ? iv_sum / iv_n : 0.0;
+    double vblockiness = vboundary - vinner;
+    if (vblockiness < 0)
+        vblockiness = 0;
+
+    const double score = (blockiness + vblockiness) / 2.0;
+    if (score >= 6.0)
+        return 3;
+    if (score >= 2.5)
+        return 2;
+    if (score >= 0.8)
+        return 1;
+    return 0;
+}
+
 // ASCII → 宽字符（清单 id/变体 token 均为 ASCII，足够）
 static std::wstring widen(const std::string& s)
 {
@@ -349,7 +408,7 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
                      int quality, int run_scale, bool target_mode, int target_value,
                      bool target_is_width, bool single_file, const std::wstring& wext,
                      const std::wstring& wdisplay, const std::wstring& denoise_seg,
-                     const std::wstring& scale_seg, int tilesize, bool verbose)
+                     const std::wstring& scale_seg, int tilesize, bool denoise_auto, bool verbose)
 {
     const int total = (int)input_files.size();
     int done = 0;
@@ -474,6 +533,15 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
         }
 
         // 目标尺寸模式的每文件决策：指定维度 ≥ 原图 → 超分；< 原图 → 直通缩放
+        // AUTO：按当前文件伪影估计规范档位（单文件命名与模型变体都使用解析结果）
+        int file_denoise = denoise_level;
+        if (denoise_auto)
+        {
+            file_denoise = estimate_denoise_level(pixeldata, w, h);
+            if (verbose)
+                fprintf(stderr, "denoise: auto resolved level=%d\n", file_denoise);
+        }
+
         bool use_engine = true;
         int file_scale = run_scale;
         if (target_mode)
@@ -491,11 +559,14 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
         }
 
         // 输出路径（单文件按 SR/直通分别命名；文件夹预构建）
+        std::wstring file_denoise_seg = denoise_auto && file_denoise > 0
+            ? (L"-n" + std::to_wstring(file_denoise))
+            : denoise_seg;
         path_t outpath;
         if (single_file)
         {
             std::filesystem::path in(inpath);
-            outpath = single_file_outpath(in, wdisplay, denoise_seg, scale_seg, wext, !use_engine);
+            outpath = single_file_outpath(in, wdisplay, file_denoise_seg, scale_seg, wext, !use_engine);
         }
         else
         {
@@ -506,9 +577,9 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
         if (use_engine)
         {
             // 尺寸模式按文件倍数重载模型（倍率模式 loaded_scale 恒定）
-            if (file_scale != loaded_scale)
+            if (file_scale != loaded_scale || (denoise_auto && file_denoise != denoise_level))
             {
-                resolve_model_files(mi, file_scale, denoise_level, cur_param, cur_bin, cur_prepad);
+                resolve_model_files(mi, file_scale, file_denoise, cur_param, cur_bin, cur_prepad);
                 if (engine->load_files(cur_param, cur_bin) != 0)
                 {
                     fail(true, "model load failed", inpath);
@@ -521,7 +592,7 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
                     fprintf(stderr, "engine loaded scale=%dx prepad=%d\n", file_scale, cur_prepad);
                 }
             }
-            engine->configure(file_scale, denoise_level, tilesize, cur_prepad);
+            engine->configure(file_scale, file_denoise, tilesize, cur_prepad);
 
             ncnn::Mat inimage(w, h, (void*)pixeldata, (size_t)3, 3);
             ncnn::Mat native_out(w * file_scale, h * file_scale, (size_t)3, 3);
@@ -675,7 +746,8 @@ int PATH_MAIN(int argc, wchar_t** argv)
     int quality = 90;
     int tilesize_arg = 0;
     int gpuid_arg = -1000; // -1000 = auto
-    int denoise_level = 0; // 0=无 1=低 2=中 3=高（AUTO 在工单 06）
+    int denoise_level = 0; // 0=无 1=低 2=中 3=高
+    bool denoise_auto = false; // AUTO：按文件伪影估计自动选档（工单 06）
     int verbose = 0;
 
     setlocale(LC_ALL, "");
@@ -715,9 +787,10 @@ int PATH_MAIN(int argc, wchar_t** argv)
             else if (d == L"low") denoise_level = 1;
             else if (d == L"mid") denoise_level = 2;
             else if (d == L"high") denoise_level = 3;
+            else if (d == L"auto") denoise_auto = true;
             else
             {
-                fprintf(stderr, "invalid --denoise level (none/low/mid/high)\n");
+                fprintf(stderr, "invalid --denoise level (auto/none/low/mid/high)\n");
                 return EXIT_PARAM;
             }
         }
@@ -820,6 +893,16 @@ int PATH_MAIN(int argc, wchar_t** argv)
         return EXIT_PARAM;
     }
 
+    if (denoise_auto)
+    {
+        bool any_level = mi->denoise.count(1) || mi->denoise.count(2) || mi->denoise.count(3);
+        if (!any_level)
+        {
+            fprintf(stderr, "model %s does not support denoise (cannot use AUTO)\n", mi->id.c_str());
+            return EXIT_PARAM;
+        }
+        denoise_level = 0; // 具体档位按文件估计（见 run_files）
+    }
     if (mi->denoise.find(denoise_level) == mi->denoise.end())
     {
         fprintf(stderr, "model %s does not support denoise level %d\n", mi->id.c_str(), denoise_level);
@@ -1021,21 +1104,21 @@ int PATH_MAIN(int argc, wchar_t** argv)
         Waifu2xEngine engine(gpuid, num_threads);
         rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
-                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, verbose);
+                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, verbose);
     }
     else if (mi->arch == "cugan")
     {
         CuganEngine engine(gpuid, num_threads);
         rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
-                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, verbose);
+                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, verbose);
     }
     else // rrdb | compact
     {
         RealesrganEngine engine(gpuid);
         rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
-                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, verbose);
+                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, verbose);
     }
 
     ncnn::destroy_gpu_instance();
