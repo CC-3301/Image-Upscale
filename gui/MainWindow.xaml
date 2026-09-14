@@ -16,7 +16,7 @@
         </Style>
         <Style TargetType="Button">
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderThickness" Value="0.5"/>
         </Style>
     </Window.Resources>
     <Grid Margin="14">
@@ -61,7 +61,7 @@
 
         <!-- 降噪 + 输出 -->
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
-            <!-- v0.2.5：标签与控件各自成组（StackPanel），WrapPanel 窄窗口整体换行，不再拆散"质量："与其滑条/输入框 -->
+            <!-- v0.2.4 覆盖修复：标签与控件各自成组（StackPanel），WrapPanel 窄窗口整体换行，不再拆散"质量："与其滑条/输入框 -->
             <WrapPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="降噪：" VerticalAlignment="Center"/>
