@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## Project memory（开工必读）
+
+**每次会话开始、以及改动以下区域之前，先读 `docs/lessons.md`**（历史踩坑：引擎 elempack 契约、Mat 生存期、输出编码、models 定位、GUI 主题/拖拽/布局、构建工具链备忘）：
+
+- 改引擎输出、ncnn::Mat 生命周期、models 定位 → lessons §1
+- 改 GUI 控件布局、拖拽、降噪判据、setting.ini → lessons §2
+- 打包发布、写回归测试、本机工具链问题 → lessons §3/§4
+
+### Build / test / package 速查
+
+- 引擎构建：`scripts\engine-build.bat`（增量；已封装 vcvars/cmake 路径，勿手写编译命令）
+- 测试：先 `set IU_ENGINE=<仓库>\bld\image-upscale.exe`，再 `python -m pytest tests -q`（conftest 默认路径在本布局不存在；lessons §4）
+- 打包：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；重新发布用新版本号，不删旧包）
+
 ## Agent skills
 
 ### Issue tracker
