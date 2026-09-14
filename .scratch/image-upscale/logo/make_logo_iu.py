@@ -83,6 +83,26 @@ def v1_w(target_w, name):
     save_all(img, name)
 
 
+def v1_cond(target_w, name, stroke=8):
+    """候选：Bahnschrift Bold Condensed —— 同宽度下字母更高，竖向也撑满"""
+    img = rounded_bg((99, 102, 241), (139, 92, 246))
+    probe = ImageFont.truetype(FONT_DIN, 100)
+    probe.set_variation_by_name("Bold Condensed")
+    ld = ImageDraw.Draw(Image.new("L", (8, 8)))
+    b = ld.textbbox((0, 0), "IU", font=probe, stroke_width=stroke)
+    size = int(100 * target_w / (b[2] - b[0]))
+    font = ImageFont.truetype(FONT_DIN, size)
+    font.set_variation_by_name("Bold Condensed")
+    layer = Image.new("L", (SIZE, SIZE), 0)
+    ldd = ImageDraw.Draw(layer)
+    bbox = ldd.textbbox((0, 0), "IU", font=font, stroke_width=stroke)
+    x, y = (SIZE - (bbox[2] - bbox[0])) // 2 - bbox[0], (SIZE - (bbox[3] - bbox[1])) // 2 - bbox[1] - 20
+    ldd.text((x, y), "IU", font=font, fill=255, stroke_width=stroke, stroke_fill=255)
+    solid = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255))
+    img.alpha_composite(Image.composite(solid, Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0)), layer))
+    save_all(img, name)
+
+
 # V2：渐变字 IU · 深海军蓝底（青→翠，DIN 风格字体）
 def v2():
     img = rounded_bg((15, 23, 42), (30, 41, 59))
@@ -105,5 +125,7 @@ if __name__ == "__main__":
     v1()
     v2()
     v3()
-    v1_w(870, "iu-v1-w870")   # 候选 A：约 85%
-    v1_w(950, "iu-v1-w950")   # 候选 B：约 93%（近满幅）
+    v1_w(870, "iu-v1-w870")     # 二轮候选 A（约 85%）
+    v1_w(950, "iu-v1-w950")     # 二轮候选 B（约 93%）
+    v1_w(990, "iu-v1-w990")     # 三轮候选 A：Segoe 极限宽约 97%
+    v1_cond(950, "iu-v1-cond950")  # 三轮候选 B：Bold Condensed，同宽更高
