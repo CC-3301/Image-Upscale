@@ -217,26 +217,22 @@ public partial class MainWindow : Window
             InputBox.Text = dlg.FileName;
     }
 
-    private void OnDragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
-        e.Handled = true;
-    }
+    private void OnDragOver(object sender, DragEventArgs e) => HandleDragOver(e);
 
-    private void OnDrop(object sender, DragEventArgs e)
-    {
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
-            InputBox.Text = files[0];
-    }
+    private void OnDrop(object sender, DragEventArgs e) => HandleDrop(e);
 
     // 工单 11：输入框自身接受拖放（TextBox 内建处理会吞掉冒泡事件，用隧道事件拦截）
-    private void OnInputPreviewDragOver(object sender, DragEventArgs e)
+    private void OnInputPreviewDragOver(object sender, DragEventArgs e) => HandleDragOver(e);
+
+    private void OnInputPreviewDrop(object sender, DragEventArgs e) => HandleDrop(e);
+
+    private static void HandleDragOver(DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
-    private void OnInputPreviewDrop(object sender, DragEventArgs e)
+    private void HandleDrop(DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
             InputBox.Text = files[0];
