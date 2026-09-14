@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from conftest import REPO, make_gray_jpg, make_png, needs_engine, run_engine
+from conftest import REPO, make_gray_jpg, make_png, needs_engine, run_engine, MODEL
 
 BASELINE = REPO / "tests" / ".baseline"
 
@@ -26,7 +26,7 @@ def test_cpu_2x_dimensions_and_psrn(workdir):
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "checker-(upconv_7_anime_style_art_rgb)-2.0x.png"
+    out = workdir / f"checker-({MODEL})-2.0x.png"
     img = Image.open(out)
     assert img.size == (128, 128)
 
@@ -47,7 +47,7 @@ def test_grayscale_jpg_input(workdir):
     make_gray_jpg(inp)
     p = run_engine(["-i", inp, "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "gray-(upconv_7_anime_style_art_rgb)-2.0x.jpg"
+    out = workdir / f"gray-({MODEL})-2.0x.jpg"
     img = Image.open(out)
     assert img.size == (128, 128)
     # 输出应为 RGB 语义（JPG 无 alpha）
@@ -63,5 +63,5 @@ def test_webp_input_decode(workdir):
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "pic-(upconv_7_anime_style_art_rgb)-2.0x.png"
+    out = workdir / f"pic-({MODEL})-2.0x.png"
     assert Image.open(out).size == (128, 128)

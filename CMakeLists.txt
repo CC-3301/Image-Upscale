@@ -205,10 +205,22 @@ image_upscale_add_shader(engine/src/waifu2x_preproc.comp)
 image_upscale_add_shader(engine/src/waifu2x_postproc.comp)
 image_upscale_add_shader(engine/src/waifu2x_preproc_tta.comp)
 image_upscale_add_shader(engine/src/waifu2x_postproc_tta.comp)
+image_upscale_add_shader(engine/src/realcugan_preproc.comp)
+image_upscale_add_shader(engine/src/realcugan_postproc.comp)
+image_upscale_add_shader(engine/src/realcugan_4x_postproc.comp)
+image_upscale_add_shader(engine/src/realcugan_preproc_tta.comp)
+image_upscale_add_shader(engine/src/realcugan_postproc_tta.comp)
+image_upscale_add_shader(engine/src/realcugan_4x_postproc_tta.comp)
+image_upscale_add_shader(engine/src/realesrgan_preproc.comp)
+image_upscale_add_shader(engine/src/realesrgan_postproc.comp)
+image_upscale_add_shader(engine/src/realesrgan_preproc_tta.comp)
+image_upscale_add_shader(engine/src/realesrgan_postproc_tta.comp)
 
 add_executable(image-upscale
     engine/src/main.cpp
     engine/src/waifu2x.cpp
+    engine/src/realcugan.cpp
+    engine/src/realesrgan.cpp
     ${SHADER_SPV_HEX_FILES}
 )
 

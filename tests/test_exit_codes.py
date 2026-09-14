@@ -46,8 +46,15 @@ def test_unknown_model_type_is_param_error(workdir):
 def test_missing_model_files_is_infer_error(workdir):
     inp = workdir / "A.png"
     make_png(inp)
-    # 已知类型（upconv）但模型文件不存在 → 模型加载失败 → 2
-    p = run_engine(["-i", inp, "-m", "upconv_7_photo", "-g", "-1"])
+    # 自建 manifest：id 指向不存在的模型目录 → 文件缺失 → 优雅 EXIT_INFER（而非段错误）
+    md = workdir / "models"
+    md.mkdir()
+    (md / "manifest.conf").write_text(
+        "model ghost\ndisplay ghost\ngroup manga\narch waifu2x\ndir ghost\n"
+        "scale 2\nprepad 7\nin Input1\nout Eltwise4\n"
+        "denoise none 0\ndenoise low 1\ndenoise mid 2\ndenoise high 3\n",
+        encoding="utf-8")
+    p = run_engine(["-i", inp, "-m", "ghost", "-g", "-1"], cwd=workdir)
     assert p.returncode == 2
 
 

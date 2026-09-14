@@ -20,3 +20,6 @@ tests/.baseline/
 
 # asan 构建目录
 bld-asan/
+
+# pnnx 转换临时目录
+.tmp-convert/
