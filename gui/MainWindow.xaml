@@ -96,7 +96,8 @@
                       VerticalAlignment="Center" ResizeBehavior="PreviousAndNext"
                       Background="Transparent"/>
         <GroupBox Grid.Row="6" Header="处理日志" Padding="4" MinHeight="80">
-            <TextBox x:Name="LogBox" FontFamily="Consolas" FontSize="12"
+            <!-- 工单 34：日志文本显式顶对齐（隐式 TextBox 样式的垂直居中会波及多行日志区，lessons §2.1 同款坑） -->
+            <TextBox x:Name="LogBox" FontFamily="Consolas" FontSize="12" VerticalContentAlignment="Top"
                      IsReadOnly="True" TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto" Background="White"/>
         </GroupBox>

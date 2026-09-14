@@ -41,3 +41,4 @@
 - 新三版（`.scratch/image-upscale/logo/`，脚本 `make_logo_iu.py`）：`iu-v1-flat`（靛紫渐变白字）/ `iu-v2-glow`（深蓝底青翠渐变字）/ `iu-v3-light`（浅底紫字描边框）
 - **v1 作为默认接入**：`gui/assets/app.ico`（csproj ApplicationIcon = exe 文件图标）+ Resource pack URI（窗口/任务栏图标）；ExtractAssociatedIcon 验证 exe 图标非空
 - V2/V3 如需切换：替换 `gui/assets/app.ico` 重打即可
+- 验证轮反馈（2026-09-15）：IU 字母偏小 → 字号改为按目标宽度 760/1024（约 74%）自适应，三版同步放大；v1 已重打进 v0.2.2 包

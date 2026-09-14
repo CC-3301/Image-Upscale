@@ -38,6 +38,14 @@ def save_all(img, name):
     print("saved", name)
 
 
+def fit_font_size(text, font_path, target_w, stroke=0):
+    """按目标宽度反推字号（验证轮：IU 字母放大）"""
+    probe = ImageFont.truetype(font_path, 100)
+    ld = ImageDraw.Draw(Image.new("L", (8, 8)))
+    b = ld.textbbox((0, 0), text, font=probe, stroke_width=stroke)
+    return int(100 * target_w / (b[2] - b[0]))
+
+
 def draw_text_center(img, text, font_path, font_size, fill=None, gradient=None, stroke=0):
     """居中绘制文本；gradient=(c1,c2) 时以文字形状做渐变填充"""
     font = ImageFont.truetype(font_path, font_size)
@@ -62,21 +70,24 @@ def draw_text_center(img, text, font_path, font_size, fill=None, gradient=None, 
 # V1：白字 IU · 靛紫渐变圆角方（扁平常规款）
 def v1():
     img = rounded_bg((99, 102, 241), (139, 92, 246))
-    draw_text_center(img, "IU", FONT_BOLD, 470, fill=(255, 255, 255), stroke=14)
+    size = fit_font_size("IU", FONT_BOLD, 760, stroke=18)
+    draw_text_center(img, "IU", FONT_BOLD, size, fill=(255, 255, 255), stroke=18)
     save_all(img, "iu-v1-flat")
 
 
 # V2：渐变字 IU · 深海军蓝底（青→翠，DIN 风格字体）
 def v2():
     img = rounded_bg((15, 23, 42), (30, 41, 59))
-    draw_text_center(img, "IU", FONT_DIN, 470, gradient=((34, 211, 238), (52, 211, 153)), stroke=16)
+    size = fit_font_size("IU", FONT_DIN, 760, stroke=20)
+    draw_text_center(img, "IU", FONT_DIN, size, gradient=((34, 211, 238), (52, 211, 153)), stroke=20)
     save_all(img, "iu-v2-glow")
 
 
 # V3：浅底 + 靛紫渐变字 IU（亮色调，描边圆角框）
 def v3():
     img = rounded_bg((248, 250, 252), (224, 231, 240))
-    draw_text_center(img, "IU", FONT_BOLD, 470, gradient=((99, 102, 241), (139, 92, 246)), stroke=14)
+    size = fit_font_size("IU", FONT_BOLD, 760, stroke=18)
+    draw_text_center(img, "IU", FONT_BOLD, size, gradient=((99, 102, 241), (139, 92, 246)), stroke=18)
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([46, 46, SIZE - 46, SIZE - 46], radius=160, outline=(99, 102, 241, 255), width=18)
     save_all(img, "iu-v3-light")
