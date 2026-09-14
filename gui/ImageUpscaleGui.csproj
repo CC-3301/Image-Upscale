@@ -10,7 +10,7 @@
     <RootNamespace>ImageUpscaleGui</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- 工单 31：版本号唯一来源；GUI 标题运行时读取 -->
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
     <!-- 工单 28：不生成 pdb（bin/obj/publish 全链路） -->
     <DebugType>none</DebugType>
     <!-- 工单 32：IU 字母标识（v1）作为 exe 文件图标 -->

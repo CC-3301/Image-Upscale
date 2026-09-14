@@ -50,6 +50,9 @@ public partial class MainWindow : Window
         Title = $"Image-Upscale 图像超分工具 v{ver?.ToString(3) ?? "?"}";
         // 工单 32：窗口/任务栏图标（exe 文件图标见 csproj ApplicationIcon，同一资源）
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/assets/app.ico", UriKind.Absolute));
+        // 工单 25/37：几何恢复必须在显示之前（Loaded 时窗口已渲染，先闪默认位再跳走）；
+        // 引擎定位与其余设置恢复仍在 OnLoaded
+        RestoreWindowBounds(SettingsStore.Load());
         Loaded += OnLoaded;
     }
 
@@ -81,8 +84,7 @@ public partial class MainWindow : Window
         var modelIdx = _models.FindIndex(m => m.Id == s.ModelId);
         ModelBox.SelectedIndex = modelIdx >= 0 ? modelIdx : 0;
         RestoreSettings(s);
-        // 工单 25：恢复窗口几何（尺寸 → 位置 → 最大化）
-        RestoreWindowBounds(s);
+        // 工单 37：窗口几何已改在构造函数显示前恢复，此处不再重复
 
         Log($"引擎就绪，已加载 {_models.Count} 个模型");  // 工单 33：启动完成后日志只此一条
     }
