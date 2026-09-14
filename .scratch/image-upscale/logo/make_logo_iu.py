@@ -75,6 +75,14 @@ def v1():
     save_all(img, "iu-v1-flat")
 
 
+def v1_w(target_w, name):
+    """验证轮：更大字号候选（等维护者确认后才接入）"""
+    img = rounded_bg((99, 102, 241), (139, 92, 246))
+    size = fit_font_size("IU", FONT_BOLD, target_w, stroke=18)
+    draw_text_center(img, "IU", FONT_BOLD, size, fill=(255, 255, 255), stroke=18)
+    save_all(img, name)
+
+
 # V2：渐变字 IU · 深海军蓝底（青→翠，DIN 风格字体）
 def v2():
     img = rounded_bg((15, 23, 42), (30, 41, 59))
@@ -97,3 +105,5 @@ if __name__ == "__main__":
     v1()
     v2()
     v3()
+    v1_w(870, "iu-v1-w870")   # 候选 A：约 85%
+    v1_w(950, "iu-v1-w950")   # 候选 B：约 93%（近满幅）

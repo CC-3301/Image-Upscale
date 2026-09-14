@@ -42,3 +42,4 @@
 - **v1 作为默认接入**：`gui/assets/app.ico`（csproj ApplicationIcon = exe 文件图标）+ Resource pack URI（窗口/任务栏图标）；ExtractAssociatedIcon 验证 exe 图标非空
 - V2/V3 如需切换：替换 `gui/assets/app.ico` 重打即可
 - 验证轮反馈（2026-09-15）：IU 字母偏小 → 字号改为按目标宽度 760/1024（约 74%）自适应，三版同步放大；v1 已重打进 v0.2.2 包
+- 二轮反馈（2026-09-15）：74% 仍偏小 → 出两档候选 `iu-v1-w870`（约 85%）/ `iu-v1-w950`（约 93% 近满幅），**等维护者选定后再接入重打**；同轮新增流程规则：创意/UI 类需求先出方案、确认后才进入下一步（已写入 AGENTS.md）

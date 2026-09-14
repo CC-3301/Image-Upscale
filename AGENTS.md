@@ -8,6 +8,8 @@
 - 改 GUI 控件布局、拖拽、降噪判据、setting.ini → lessons §2
 - 打包发布、写回归测试、本机工具链问题 → lessons §3/§4
 
+**创意/UI 类需求（LOGO、图标、配色、布局、字体等视觉与体验决策）先出方案，维护者确认后才进入下一步**（接入/构建/打包/提交均算下一步）。
+
 ### Build / test / package 速查
 
 - 引擎构建：`scripts\engine-build.bat`（标准 VS 安装零配置；便携/非标准 MSVC 设 `IU_VS_PATH`，勿手写编译命令）
