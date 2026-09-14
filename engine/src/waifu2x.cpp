@@ -30,8 +30,11 @@ Waifu2x::~Waifu2x()
         delete waifu2x_postproc;
     }
 
-    bicubic_2x->destroy_pipeline(net.opt);
-    delete bicubic_2x;
+    if (bicubic_2x)
+    {
+        bicubic_2x->destroy_pipeline(net.opt);
+        delete bicubic_2x;
+    }
 }
 
 #if _WIN32
@@ -65,6 +68,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
         if (!fp)
         {
             fwprintf(stderr, L"_wfopen %ls failed\n", parampath.c_str());
+            return -1;
         }
 
         net.load_param(fp);
@@ -76,6 +80,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
         if (!fp)
         {
             fwprintf(stderr, L"_wfopen %ls failed\n", modelpath.c_str());
+            return -1;
         }
 
         net.load_model(fp);

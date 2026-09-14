@@ -1,4 +1,4 @@
-// image-upscale 引擎 CLI（工单 01 基础 + 工单 03 模型清单/降噪映射）
+// image-upscale 引擎 CLI（工单 01 基础 + 03 模型清单/降噪 + 02 尺寸模式）
 // 命令面、命名规则、格式/质量控制为本项目原创；
 // tiled 推理内核适配自 nihui/waifu2x-ncnn-vulkan、realcugan-ncnn-vulkan、
 // Real-ESRGAN-ncnn-vulkan（均 MIT，见 NOTICE.md）
@@ -15,8 +15,10 @@
 // stb 为头文件库，实现必须在唯一包含点展开
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb_image.h"
 #include "stb_image_write.h"
+#include "stb_image_resize2.h"
 #include "webp_image.h"
 
 // ncnn
@@ -41,7 +43,9 @@ static void print_usage()
     fprintf(stdout, "Usage: image-upscale -i input-path [options]...\n\n");
     fprintf(stdout, "  -i input-path        input image (jpg/jpeg/png/webp) or directory\n");
     fprintf(stdout, "  -m model-id          model id from models/manifest.conf (default: upconv7-anime)\n");
-    fprintf(stdout, "  -s scale             upscale ratio, must be a native scale of the model (default: 2.0)\n");
+    fprintf(stdout, "  -s scale             ratio mode: native scale of the model (default: 2.0)\n");
+    fprintf(stdout, "  --width N            target-size mode: target width (exclusive with -s/--height)\n");
+    fprintf(stdout, "  --height N           target-size mode: target height (exclusive with -s/--width)\n");
     fprintf(stdout, "  --denoise level      none/low/mid/high (default: none; model must support it)\n");
     fprintf(stdout, "  -f format            output image format jpg/png/webp (default: jpg)\n");
     fprintf(stdout, "  -q quality           output quality 0-100 for jpg/webp (default: 90)\n");
@@ -96,7 +100,6 @@ static bool parse_manifest(const std::string& path, std::vector<ModelInfo>& out)
 
     while (fgets(line, sizeof(line), fp))
     {
-        // 去掉 BOM/换行
         std::string l = line;
         if (!l.empty() && (l[0] == '\xEF'))
             l = l.substr(3);
@@ -124,11 +127,9 @@ static bool parse_manifest(const std::string& path, std::vector<ModelInfo>& out)
         else if (key == "scale") cur.scales.push_back(atoi(val.c_str()));
         else if (key == "prepad")
         {
-            // "prepad <n>"（单倍数模型）或 "prepad <scale> <n>"（cugan）
             size_t sp2 = val.find(' ');
             if (sp2 == std::string::npos)
             {
-                // 填充到所有已声明倍数
                 for (int s : cur.scales)
                     cur.prepad[s] = atoi(val.c_str());
             }
@@ -156,6 +157,60 @@ static bool parse_manifest(const std::string& path, std::vector<ModelInfo>& out)
     flush();
     return true;
 }
+
+// ---- 引擎多态包装：尺寸模式需要按文件倍数重载模型 ----
+struct IEngine
+{
+    virtual int load_files(const std::wstring& parampath, const std::wstring& binpath) = 0;
+    virtual int process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const = 0;
+    virtual void configure(int scale, int denoise_level, int tilesize, int prepadding) = 0;
+    virtual ~IEngine() = default;
+};
+
+struct Waifu2xEngine : IEngine
+{
+    Waifu2x impl;
+    Waifu2xEngine(int gpuid, int num_threads) : impl(gpuid, false, num_threads) {}
+    int load_files(const std::wstring& p, const std::wstring& b) override { return impl.load(p, b); }
+    int process(const ncnn::Mat& in, ncnn::Mat& out) const override { return impl.process(in, out); }
+    void configure(int scale, int denoise_level, int tilesize, int prepadding) override
+    {
+        impl.noise = denoise_level;
+        impl.scale = scale;
+        impl.tilesize = tilesize;
+        impl.prepadding = prepadding;
+    }
+};
+
+struct CuganEngine : IEngine
+{
+    RealCUGAN impl;
+    CuganEngine(int gpuid, int num_threads) : impl(gpuid, false, num_threads) {}
+    int load_files(const std::wstring& p, const std::wstring& b) override { return impl.load(p, b); }
+    int process(const ncnn::Mat& in, ncnn::Mat& out) const override { return impl.process(in, out); }
+    void configure(int scale, int denoise_level, int tilesize, int prepadding) override
+    {
+        impl.noise = denoise_level;
+        impl.scale = scale;
+        impl.tilesize = tilesize;
+        impl.prepadding = prepadding;
+        impl.syncgap = 3;
+    }
+};
+
+struct RealesrganEngine : IEngine
+{
+    RealESRGAN impl;
+    RealesrganEngine(int gpuid) : impl(gpuid, false) {}
+    int load_files(const std::wstring& p, const std::wstring& b) override { return impl.load(p, b); }
+    int process(const ncnn::Mat& in, ncnn::Mat& out) const override { return impl.process(in, out); }
+    void configure(int scale, int denoise_level, int tilesize, int prepadding) override
+    {
+        impl.scale = scale;
+        impl.tilesize = tilesize;
+        impl.prepadding = prepadding;
+    }
+};
 
 // stb 写文件回调：聚合到内存缓冲
 struct MemBuffer
@@ -185,10 +240,7 @@ static unsigned char* flatten_alpha_to_white(unsigned char* pixeldata, int w, in
 {
     unsigned char* rgb = (unsigned char*)malloc((size_t)w * h * 3);
     if (!rgb)
-    {
-        free(pixeldata);
         return NULL;
-    }
     for (int i = 0; i < w * h; i++)
     {
         const unsigned char* px = pixeldata + (size_t)i * 4;
@@ -199,7 +251,23 @@ static unsigned char* flatten_alpha_to_white(unsigned char* pixeldata, int w, in
             out[ch] = (unsigned char)((px[ch] * a + 255 * (255 - a) + 127) / 255);
         }
     }
-    free(pixeldata);
+    return rgb;
+}
+
+// 灰度（可能带 alpha）→ RGB
+static unsigned char* gray_to_rgb(unsigned char* pixeldata, int w, int h, int c)
+{
+    unsigned char* rgb = (unsigned char*)malloc((size_t)w * h * 3);
+    if (!rgb)
+        return NULL;
+    for (int p = 0; p < w * h; p++)
+    {
+        const unsigned char* px = pixeldata + (size_t)p * c;
+        unsigned char* out = rgb + (size_t)p * 3;
+        int a = c == 2 ? px[1] : 255;
+        for (int ch = 0; ch < 3; ch++)
+            out[ch] = (unsigned char)((px[0] * a + 255 * (255 - a) + 127) / 255);
+    }
     return rgb;
 }
 
@@ -209,12 +277,78 @@ static std::wstring widen(const std::string& s)
     return std::wstring(s.begin(), s.end());
 }
 
-// 解码 -> 推理 -> 编码 循环（顺序流水，进度行输出到 stdout）
-// 引擎类只需提供 process(in, out) const；模板避免三套重复代码
+// 高质量等比缩放（Catmull-Rom；输入输出均 3 通道 RGB）
+static bool resize_rgb(const ncnn::Mat& src, ncnn::Mat& dst, int out_w, int out_h)
+{
+    dst.create(out_w, out_h, 3);
+    return stbir_resize_uint8_linear((const unsigned char*)src.data, src.w, src.h, src.w * 3,
+        (unsigned char*)dst.data, out_w, out_h, out_w * 3, STBIR_RGB) != 0;
+}
+
+// 目标尺寸模式的原生倍率选择：≥ 比例的最小档，不足取最大档
+static int pick_native_scale(const ModelInfo& mi, double ratio)
+{
+    int best = 0;
+    for (int s : mi.scales)
+    {
+        if ((double)s >= ratio && (best == 0 || s < best))
+            best = s;
+    }
+    if (best == 0)
+        best = *std::max_element(mi.scales.begin(), mi.scales.end());
+    return best;
+}
+
+// ---- 模型文件解析（按架构与倍数/降噪档） ----
+static void resolve_model_files(const ModelInfo& mi, int scale, int denoise_level,
+                                path_t& parampath, path_t& binpath, int& prepadding)
+{
+    path_t model_dir = PATHSTR("models/") + widen(mi.dir);
+    const std::string& token = mi.denoise.at(denoise_level);
+
+    if (mi.arch == "waifu2x")
+    {
+        char seg[32];
+        snprintf(seg, sizeof(seg), "noise%s_scale2.0x_model", token.c_str());
+        parampath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".param"));
+        binpath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".bin"));
+    }
+    else if (mi.arch == "cugan")
+    {
+        char seg[64];
+        snprintf(seg, sizeof(seg), "up%dx-%s", scale, token.c_str());
+        parampath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".param"));
+        binpath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".bin"));
+    }
+    else
+    {
+        parampath = sanitize_filepath(PATHSTR("models/") + widen(mi.dir + "/" + token + ".param"));
+        binpath = sanitize_filepath(PATHSTR("models/") + widen(mi.dir + "/" + token + ".bin"));
+    }
+    prepadding = mi.prepad.count(scale) ? mi.prepad.at(scale) : 0;
+}
+
+// 单文件输出的命名（工单 02 命名规则）
+// SR 路径：A-(模型名)-[nN-]<倍率|尺寸>；直通缩放：A-(Resize)-<尺寸>
+static path_t single_file_outpath(const std::filesystem::path& in, const std::wstring& display,
+                                  const std::wstring& denoise_seg, const std::wstring& scale_seg,
+                                  const std::wstring& ext, bool direct_resize)
+{
+    if (direct_resize)
+        return in.parent_path() / (in.stem().wstring() + L"-(Resize)-" + scale_seg + L"." + ext);
+    return in.parent_path() / (in.stem().wstring() + L"-(" + display + L")" + denoise_seg + L"-" + scale_seg + L"." + ext);
+}
+
+// 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
+// 引擎类只需提供 process(in, out) const；模板避免多套重复代码
 template <typename Engine>
-static int run_files(Engine* engine, const std::vector<path_t>& input_files,
+static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
+                     const std::vector<path_t>& input_files,
                      const std::vector<path_t>& output_files, const path_t& format,
-                     int quality, int scale, bool verbose)
+                     int quality, int run_scale, bool target_mode, int target_value,
+                     bool target_is_width, bool single_file, const std::wstring& wext,
+                     const std::wstring& wdisplay, const std::wstring& denoise_seg,
+                     const std::wstring& scale_seg, int tilesize, bool verbose)
 {
     const int total = (int)input_files.size();
     int done = 0;
@@ -235,10 +369,14 @@ static int run_files(Engine* engine, const std::vector<path_t>& input_files,
         advance_progress();
     };
 
+    // 当前已加载的模型倍数（尺寸模式可能按文件切换倍数 → 变更时重载）
+    int loaded_scale = -1;
+    path_t cur_param, cur_bin;
+    int cur_prepad = 0;
+
     for (int i = 0; i < total; i++)
     {
         const path_t& inpath = input_files[i];
-        const path_t& outpath = output_files[i];
 
         // 解码
         unsigned char* pixeldata = 0;
@@ -299,17 +437,12 @@ static int run_files(Engine* engine, const std::vector<path_t>& input_files,
         }
         else if (c == 1 || c == 2)
         {
-            // 灰度（可能带 alpha）：转 RGB，带 alpha 时拍平白底
-            unsigned char* rgb = (unsigned char*)malloc((size_t)w * h * 3);
-            for (int p = 0; p < w * h; p++)
+            unsigned char* rgb = gray_to_rgb(pixeldata, w, h, c);
+            if (!rgb)
             {
-                const unsigned char* px = pixeldata + (size_t)p * c;
-                unsigned char* out = rgb + (size_t)p * 3;
-                int a = c == 2 ? px[1] : 255;
-                for (int ch = 0; ch < 3; ch++)
-                    out[ch] = (unsigned char)((px[0] * a + 255 * (255 - a) + 127) / 255);
+                fail(false, "out of memory", inpath);
+                continue;
             }
-            free(pixeldata);
             pixeldata = rgb;
             c = 3;
         }
@@ -319,16 +452,118 @@ static int run_files(Engine* engine, const std::vector<path_t>& input_files,
             fprintf(stderr, "loaded %ls (%dx%d)\n", inpath.c_str(), w, h);
         }
 
-        // 推理
-        ncnn::Mat inimage(w, h, (void*)pixeldata, (size_t)3, 3);
-        ncnn::Mat outimage(w * scale, h * scale, (size_t)3, 3);
-        int pre = engine->process(inimage, outimage);
-        free(pixeldata);
-
-        if (pre != 0)
+        // 目标尺寸模式的每文件决策：指定维度 ≥ 原图 → 超分；< 原图 → 直通缩放
+        bool use_engine = true;
+        int file_scale = run_scale;
+        if (target_mode)
         {
-            fail(true, "inference failed", inpath);
-            continue;
+            const int orig_dim = target_is_width ? w : h;
+            if (target_value < orig_dim)
+            {
+                use_engine = false;
+            }
+            else
+            {
+                const double ratio = (double)target_value / (double)orig_dim;
+                file_scale = pick_native_scale(mi, ratio);
+            }
+        }
+
+        // 输出路径（单文件按 SR/直通分别命名；文件夹预构建）
+        path_t outpath;
+        if (single_file)
+        {
+            std::filesystem::path in(inpath);
+            outpath = single_file_outpath(in, wdisplay, denoise_seg, scale_seg, wext, !use_engine);
+        }
+        else
+        {
+            outpath = output_files[i];
+        }
+
+        ncnn::Mat outimage;
+        if (use_engine)
+        {
+            // 尺寸模式按文件倍数重载模型（倍率模式 loaded_scale 恒定）
+            if (file_scale != loaded_scale)
+            {
+                resolve_model_files(mi, file_scale, denoise_level, cur_param, cur_bin, cur_prepad);
+                if (engine->load_files(cur_param, cur_bin) != 0)
+                {
+                    fail(true, "model load failed", inpath);
+                    free(pixeldata);
+                    continue;
+                }
+                loaded_scale = file_scale;
+                if (verbose)
+                {
+                    fprintf(stderr, "engine loaded scale=%dx prepad=%d\n", file_scale, cur_prepad);
+                }
+            }
+            engine->configure(file_scale, denoise_level, tilesize, cur_prepad);
+
+            ncnn::Mat inimage(w, h, (void*)pixeldata, (size_t)3, 3);
+            ncnn::Mat native_out(w * file_scale, h * file_scale, (size_t)3, 3);
+            int pre = engine->process(inimage, native_out);
+            free(pixeldata);
+
+            if (pre != 0)
+            {
+                fail(true, "inference failed", inpath);
+                continue;
+            }
+
+            if (!target_mode)
+            {
+                outimage = native_out;
+            }
+            else
+            {
+                // 精确 resize 到目标（宽/高按指定维度，另一维度等比）
+                int exact_w, exact_h;
+                if (target_is_width)
+                {
+                    exact_w = target_value;
+                    exact_h = std::max(1, (int)((double)h * target_value / w + 0.5));
+                }
+                else
+                {
+                    exact_h = target_value;
+                    exact_w = std::max(1, (int)((double)w * target_value / h + 0.5));
+                }
+                if (native_out.w == exact_w && native_out.h == exact_h)
+                {
+                    outimage = native_out;
+                }
+                else if (!resize_rgb(native_out, outimage, exact_w, exact_h))
+                {
+                    fail(false, "resize failed", inpath);
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            // 直通缩放：跳过推理，等比缩放直达目标（宽/高按指定维度）
+            int exact_w, exact_h;
+            if (target_is_width)
+            {
+                exact_w = target_value;
+                exact_h = std::max(1, (int)((double)h * target_value / w + 0.5));
+            }
+            else
+            {
+                exact_h = target_value;
+                exact_w = std::max(1, (int)((double)w * target_value / h + 0.5));
+            }
+            ncnn::Mat inimage(w, h, (void*)pixeldata, (size_t)3, 3);
+            if (!resize_rgb(inimage, outimage, exact_w, exact_h))
+            {
+                fail(false, "resize failed", inpath);
+                free(pixeldata);
+                continue;
+            }
+            free(pixeldata);
         }
 
         // 编码（按输出格式；质量参数作用于 jpg/webp）
@@ -388,6 +623,11 @@ int PATH_MAIN(int argc, wchar_t** argv)
     path_t inputpath;
     path_t model_id = PATHSTR("upconv7-anime");
     double scale_arg = 2.0;
+    bool scale_given = false;
+    bool width_given = false;
+    bool height_given = false;
+    int target_value = 0;
+    bool target_is_width = true;
     path_t format = PATHSTR("jpg");
     int quality = 90;
     int tilesize_arg = 0;
@@ -411,6 +651,19 @@ int PATH_MAIN(int argc, wchar_t** argv)
         else if (wcscmp(a, L"-s") == 0 && i + 1 < argc)
         {
             scale_arg = wcstod(argv[++i], NULL);
+            scale_given = true;
+        }
+        else if (wcscmp(a, L"--width") == 0 && i + 1 < argc)
+        {
+            target_value = _wtoi(argv[++i]);
+            width_given = true;
+            target_is_width = true;
+        }
+        else if (wcscmp(a, L"--height") == 0 && i + 1 < argc)
+        {
+            target_value = _wtoi(argv[++i]);
+            height_given = true;
+            target_is_width = false;
         }
         else if (wcscmp(a, L"--denoise") == 0 && i + 1 < argc)
         {
@@ -465,6 +718,22 @@ int PATH_MAIN(int argc, wchar_t** argv)
         return EXIT_PARAM;
     }
 
+    // 尺寸模式三选一（规格：宽/高互斥，且与倍率互斥）
+    {
+        int modes = (width_given ? 1 : 0) + (height_given ? 1 : 0) + (scale_given ? 1 : 0);
+        if (modes > 1)
+        {
+            fprintf(stderr, "-s, --width and --height are mutually exclusive\n");
+            return EXIT_PARAM;
+        }
+        if ((width_given || height_given) && target_value <= 0)
+        {
+            fprintf(stderr, "invalid target size (must be > 0)\n");
+            return EXIT_PARAM;
+        }
+    }
+    bool target_mode = width_given || height_given;
+
     // ---- 参数校验（全部 -> EXIT_PARAM） ----
     if (wcscmp(format.c_str(), L"jpg") != 0 && wcscmp(format.c_str(), L"png") != 0 && wcscmp(format.c_str(), L"webp") != 0)
     {
@@ -492,10 +761,10 @@ int PATH_MAIN(int argc, wchar_t** argv)
         return EXIT_PARAM;
     }
 
+    std::string wid(model_id.begin(), model_id.end());
     const ModelInfo* mi = 0;
     for (const ModelInfo& m : models)
     {
-        std::string wid(model_id.begin(), model_id.end());
         if (m.id == wid)
         {
             mi = &m;
@@ -508,75 +777,55 @@ int PATH_MAIN(int argc, wchar_t** argv)
         return EXIT_PARAM;
     }
 
-    const int scale = (int)scale_arg;
-    if ((double)scale != scale_arg || std::find(mi->scales.begin(), mi->scales.end(), scale) == mi->scales.end())
-    {
-        fprintf(stderr, "unsupported scale %g for model %s (native:", scale_arg, mi->id.c_str());
-        for (int s : mi->scales)
-            fprintf(stderr, " %dx", s);
-        fprintf(stderr, ")\n");
-        return EXIT_PARAM;
-    }
-
     if (mi->denoise.find(denoise_level) == mi->denoise.end())
     {
         fprintf(stderr, "model %s does not support denoise level %d\n", mi->id.c_str(), denoise_level);
         return EXIT_PARAM;
     }
-    const std::string denoise_token = mi->denoise.at(denoise_level);
 
-    // ---- 模型文件解析（按架构） ----
-    path_t model_dir = PATHSTR("models/") + widen(mi->dir);
-    path_t parampath;
-    path_t binpath;
-    int prepadding = 0;
-
-    std::string wdir(mi->dir.begin(), mi->dir.end());
-    if (mi->arch == "waifu2x")
-    {
-        // {dir}/noise{N}_scale2.0x_model.param|bin，token = 噪声编号
-        char seg[32];
-        snprintf(seg, sizeof(seg), "noise%s_scale2.0x_model", denoise_token.c_str());
-        parampath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".param"));
-        binpath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".bin"));
-        prepadding = mi->prepad.count(scale) ? mi->prepad.at(scale) : 7;
-    }
-    else if (mi->arch == "cugan")
-    {
-        // {dir}/up{scale}-{variant}.param|bin，token = 变体中缀
-        char seg[64];
-        snprintf(seg, sizeof(seg), "up%dx-%s", scale, denoise_token.c_str());
-        parampath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".param"));
-        binpath = sanitize_filepath(model_dir + PATHSTR("/") + widen(seg) + PATHSTR(".bin"));
-        prepadding = mi->prepad.count(scale) ? mi->prepad.at(scale) : 0;
-    }
-    else // rrdb | compact
-    {
-        // {dir}/{token}.param|bin，token = 完整基础名（含可选降噪后缀）
-        parampath = sanitize_filepath(PATHSTR("models/") + widen(mi->dir + "/" + denoise_token + ".param"));
-        binpath = sanitize_filepath(PATHSTR("models/") + widen(mi->dir + "/" + denoise_token + ".bin"));
-        prepadding = mi->prepad.count(scale) ? mi->prepad.at(scale) : 0;
-    }
-
-    // 模型文件缺失时优雅报错（避免 ncnn 对空 FILE* 崩溃）
-    if (!filepath_is_readable(parampath) || !filepath_is_readable(binpath))
-    {
-        fprintf(stderr, "model files not found: %ls\n", parampath.c_str());
-        ncnn::destroy_gpu_instance();
-        return EXIT_INFER;
-    }
-
-    // ---- 收集输入文件与输出路径（命名规则：A-(模型名)-[nN-]<倍率|尺寸>） ----
+    // ---- 命名段 ----
     std::wstring wdisplay(mi->display.begin(), mi->display.end());
+    wchar_t scale_seg[24];
+    if (target_mode)
+    {
+        swprintf(scale_seg, 24, L"%dx", target_value);
+    }
+    else
+    {
+        swprintf(scale_seg, 24, L"%.1fx", scale_arg);
+    }
     std::wstring denoise_seg = denoise_level > 0 ? (L"-n" + std::to_wstring(denoise_level)) : L"";
-    wchar_t scale_seg[16];
-    swprintf(scale_seg, 16, L"%.1fx", (double)scale);
 
+    // 倍率模式：倍数合法性（清单原生倍率）
+    if (!target_mode)
+    {
+        bool ok = false;
+        for (int s : mi->scales)
+        {
+            if ((double)s == scale_arg)
+            {
+                ok = true;
+                break;
+            }
+        }
+        if (!ok)
+        {
+            fprintf(stderr, "unsupported scale %g for model %s (native:", scale_arg, mi->id.c_str());
+            for (int s : mi->scales)
+                fprintf(stderr, " %dx", s);
+            fprintf(stderr, ")\n");
+            return EXIT_PARAM;
+        }
+    }
+    const int run_scale = target_mode ? mi->scales.back() : (int)scale_arg;
+
+    // ---- 收集输入文件与输出路径 ----
+    std::wstring wext = format;
     bool input_is_dir = path_is_directory(inputpath);
+    const bool single_file = !input_is_dir;
 
     std::vector<path_t> input_files;
     std::vector<path_t> output_files;
-    path_t output_dir;
 
     auto ext_is_image = [](const path_t& ext) {
         path_t e = ext;
@@ -588,7 +837,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
     {
         std::filesystem::path in(inputpath);
         std::filesystem::path out_dir_path = in.parent_path() / (in.filename().wstring() + L"-(" + wdisplay + L")" + denoise_seg + L"-" + scale_seg);
-        output_dir = out_dir_path.wstring();
+        path_t output_dir = out_dir_path.wstring();
 
         std::error_code ec;
         std::filesystem::create_directories(out_dir_path, ec);
@@ -612,7 +861,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
                 continue;
             input_files.push_back(fullpath);
             path_t stem = get_file_name_without_extension(filename);
-            output_files.push_back(output_dir + PATHSTR('/') + stem + PATHSTR('.') + format);
+            output_files.push_back(output_dir + PATHSTR('/') + stem + PATHSTR('.') + wext);
         }
 
         if (input_files.empty())
@@ -633,14 +882,9 @@ int PATH_MAIN(int argc, wchar_t** argv)
             fprintf(stderr, "input file not readable: %ls\n", inputpath.c_str());
             return EXIT_IO;
         }
-
         input_files.push_back(inputpath);
-        std::filesystem::path in(inputpath);
-        std::filesystem::path out_path = in.parent_path() / (in.stem().wstring() + L"-(" + wdisplay + L")" + denoise_seg + L"-" + scale_seg + L"." + format);
-        output_files.push_back(out_path.wstring());
+        // 单文件输出路径在 run_files 内按实际路径（SR / 直通缩放）生成
     }
-
-    const int total = (int)input_files.size();
 
     // ---- ncnn 初始化 ----
     ncnn::create_gpu_instance();
@@ -717,59 +961,34 @@ int PATH_MAIN(int argc, wchar_t** argv)
 
     if (verbose)
     {
-        fprintf(stderr, "model: %s arch=%s scale=%dx denoise=%d tilesize=%d gpuid=%d\n",
-                mi->id.c_str(), mi->arch.c_str(), scale, denoise_level, tilesize, gpuid);
+        fprintf(stderr, "model: %s arch=%s denoise=%d tilesize=%d gpuid=%d mode=%s\n",
+                mi->id.c_str(), mi->arch.c_str(), denoise_level, tilesize, gpuid,
+                target_mode ? "target" : "ratio");
     }
 
-    // ---- 按架构创建引擎并执行 解码 -> 推理 -> 编码 循环 ----
+    // ---- 按架构创建引擎并执行循环 ----
     int rc = EXIT_OK;
+
     if (mi->arch == "waifu2x")
     {
-        Waifu2x* engine = new Waifu2x(gpuid, false, num_threads);
-        int lr = engine->load(parampath, binpath);
-        if (lr == 0)
-        {
-            engine->noise = denoise_level; // waifu2x 变体 token 即噪声编号
-            engine->scale = scale;
-            engine->tilesize = tilesize;
-            engine->prepadding = prepadding;
-            rc = run_files(engine, input_files, output_files, format, quality, scale, verbose);
-        }
-        delete engine;
-        if (lr != 0)
-            rc = EXIT_INFER;
+        Waifu2xEngine engine(gpuid, num_threads);
+        rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
+                       quality, run_scale, target_mode, target_value, target_is_width,
+                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, verbose);
     }
     else if (mi->arch == "cugan")
     {
-        RealCUGAN* engine = new RealCUGAN(gpuid, false, num_threads);
-        int lr = engine->load(parampath, binpath);
-        if (lr == 0)
-        {
-            engine->noise = denoise_level;
-            engine->scale = scale;
-            engine->tilesize = tilesize;
-            engine->prepadding = prepadding;
-            engine->syncgap = 3;
-            rc = run_files(engine, input_files, output_files, format, quality, scale, verbose);
-        }
-        delete engine;
-        if (lr != 0)
-            rc = EXIT_INFER;
+        CuganEngine engine(gpuid, num_threads);
+        rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
+                       quality, run_scale, target_mode, target_value, target_is_width,
+                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, verbose);
     }
-    else // rrdb | compact → RealESRGAN
+    else // rrdb | compact
     {
-        RealESRGAN* engine = new RealESRGAN(gpuid, false);
-        int lr = engine->load(parampath, binpath);
-        if (lr == 0)
-        {
-            engine->scale = scale;
-            engine->tilesize = tilesize;
-            engine->prepadding = prepadding;
-            rc = run_files(engine, input_files, output_files, format, quality, scale, verbose);
-        }
-        delete engine;
-        if (lr != 0)
-            rc = EXIT_INFER;
+        RealesrganEngine engine(gpuid);
+        rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
+                       quality, run_scale, target_mode, target_value, target_is_width,
+                       single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, verbose);
     }
 
     ncnn::destroy_gpu_instance();
