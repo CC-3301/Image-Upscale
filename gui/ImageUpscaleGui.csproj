@@ -13,6 +13,8 @@
     <Version>0.2.2</Version>
     <!-- 工单 28：不生成 pdb（bin/obj/publish 全链路） -->
     <DebugType>none</DebugType>
+    <!-- 工单 32：IU 字母标识（v1）作为 exe 文件图标 -->
+    <ApplicationIcon>assets\app.ico</ApplicationIcon>
     <!-- 工单 16：便携 zip 瘦身 —— 仅中文卫星资源，运行时收敛进单文件 exe -->
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
@@ -25,6 +27,11 @@
   </PropertyGroup>
   <ItemGroup Condition="Exists('$(EngineDll)')">
     <Content Include="$(EngineDll)" Link="iu_engine.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
+  <!-- 工单 32：窗口/任务栏图标（与 exe 文件图标同一资源） -->
+  <ItemGroup>
+    <Resource Include="assets\app.ico" />
   </ItemGroup>
 
 </Project>

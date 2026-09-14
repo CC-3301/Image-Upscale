@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media.Imaging;
 using System.ComponentModel;
 using Microsoft.Win32;
 
@@ -47,6 +48,8 @@ public partial class MainWindow : Window
         // 工单 31：标题带版本号（唯一来源 csproj <Version>，发版只改一处）
         var ver = typeof(MainWindow).Assembly.GetName().Version;
         Title = $"Image-Upscale 图像超分工具 v{ver?.ToString(3) ?? "?"}";
+        // 工单 32：窗口/任务栏图标（exe 文件图标见 csproj ApplicationIcon，同一资源）
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/assets/app.ico", UriKind.Absolute));
         Loaded += OnLoaded;
     }
 
@@ -81,8 +84,7 @@ public partial class MainWindow : Window
         // 工单 25：恢复窗口几何（尺寸 → 位置 → 最大化）
         RestoreWindowBounds(s);
 
-        Log($"引擎就绪：iu_engine.dll（进程内调用），models：{_modelsDir}");
-        Log($"已加载 {_models.Count} 个模型");
+        Log($"引擎就绪，已加载 {_models.Count} 个模型");  // 工单 33：启动完成后日志只此一条
     }
 
     // 恢复尺寸模式 / 倍率 / 宽高 / 格式 / 质量（模型选择已完成，OnModelChanged 已跑过）
