@@ -47,7 +47,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         // 工单 31：标题带版本号（唯一来源 csproj <Version>，发版只改一处）
         var ver = typeof(MainWindow).Assembly.GetName().Version;
-        Title = $"Image-Upscale 图像超分工具 v{ver?.ToString(3) ?? "?"}";
+        Title = $"ImageUpscale 图像超分工具 v{ver?.ToString(3) ?? "?"}";
         // 工单 32：窗口/任务栏图标（exe 文件图标见 csproj ApplicationIcon，同一资源）
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/assets/app.ico", UriKind.Absolute));
         // 工单 25/37：几何恢复必须在显示之前（Loaded 时窗口已渲染，先闪默认位再跳走）；

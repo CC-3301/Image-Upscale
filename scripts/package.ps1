@@ -38,12 +38,10 @@ if (-not (Test-Path (Join-Path $repo 'bld\iu_engine.dll'))) { throw 'engine buil
 & $dotnet publish (Join-Path $repo 'gui\ImageUpscaleGui.csproj') -c Release -r win-x64 -o $pkg -p:EngineDll="$repo\bld\iu_engine.dll"
 if ($LASTEXITCODE -ne 0) { throw 'gui publish failed' }
 
-# 3) 组装 + 守卫（工单 27）：包根仅 ImageUpscale.exe + models/ + 许可文档
+# 3) 组装 + 守卫（工单 27；v0.2.4 维护者定案：包根仅 ImageUpscale.exe + models/ + NOTICE.md；MIT 许可已并入 NOTICE.md，README 不随包分发）
 New-Item -ItemType Directory -Force (Join-Path $pkg 'models') | Out-Null
 Copy-Item (Join-Path $repo 'models\*') (Join-Path $pkg 'models') -Recurse -Force
-Copy-Item (Join-Path $repo 'LICENSE') $pkg -Force
 Copy-Item (Join-Path $repo 'NOTICE.md') $pkg -Force
-Copy-Item (Join-Path $repo 'README.md') $pkg -Force
 
 if (Test-Path (Join-Path $pkg 'iu_engine.dll')) { throw 'iu_engine.dll 未被收编进单文件（包根出现散装 dll，分发形态被破坏）' }
 $pdbs = Get-ChildItem $pkg -Filter *.pdb -Recurse

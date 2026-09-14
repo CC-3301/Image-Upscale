@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-**v0.2.2 已发布**：从 [Releases](https://github.com/CC-3301/Image-Upscale/releases/latest) 下载 zip 解压即用（根目录仅 `ImageUpscale.exe` + `models/` + 许可文档，引擎已融合进单文件）。
+**已发布**：从 [Releases](https://github.com/CC-3301/Image-Upscale/releases/latest) 下载最新 zip 解压即用（根目录仅 `ImageUpscale.exe` + `models/` + `NOTICE.md`，引擎已融合进单文件；MIT 许可与第三方声明见包内 NOTICE.md，完整文档见仓库）。
 
 后续迭代工单见 [.scratch/image-upscale/issues/](./.scratch/image-upscale/issues/)；全部工单状态以文件内 `Status:` 行为准。
 

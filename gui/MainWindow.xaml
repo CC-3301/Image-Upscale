@@ -2,7 +2,7 @@
 <Window x:Class="ImageUpscaleGui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Image-Upscale 图像超分" Height="660" Width="920"
+        Title="ImageUpscale 图像超分" Height="660" Width="920"
         MinWidth="680" MinHeight="540"
         AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver" Closing="OnClosing">
     <Window.Resources>
