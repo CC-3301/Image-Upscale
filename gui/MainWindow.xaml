@@ -38,16 +38,15 @@
             </DockPanel>
         </GroupBox>
 
-        <!-- 模型（工单 21：现有模型 / A-Z 排序 / 不再显示类型与架构） -->
+        <!-- 模型（工单 21：A-Z 排序 / 不再显示类型与架构；v0.2.4 移除"现有模型："前缀） -->
         <GroupBox Grid.Row="1" Header="模型" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
-                <TextBlock Text="现有模型：" VerticalAlignment="Center"/>
                 <ComboBox x:Name="ModelBox" Width="320" SelectionChanged="OnModelChanged"/>
             </WrapPanel>
         </GroupBox>
 
         <!-- 尺寸模式（工单 19：WrapPanel 窄窗口自动换行） -->
-        <GroupBox Grid.Row="2" Header="尺寸模式（三选一）" Padding="8" Margin="0,0,0,8">
+        <GroupBox Grid.Row="2" Header="尺寸模式" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
                 <RadioButton x:Name="ModeScale" GroupName="sizemode" IsChecked="True"
                              Content="倍率" VerticalAlignment="Center"/>
@@ -95,9 +94,9 @@
         <GridSplitter Grid.Row="5" Height="6" HorizontalAlignment="Stretch"
                       VerticalAlignment="Center" ResizeBehavior="PreviousAndNext"
                       Background="Transparent"/>
-        <GroupBox Grid.Row="6" Header="处理日志" Padding="4" MinHeight="80">
-            <!-- 工单 34：日志文本显式顶对齐；工单 35：字体继承全局默认（与其余 UI 同源，中文为微软雅黑），字号 14 -->
-            <TextBox x:Name="LogBox" FontSize="14" VerticalContentAlignment="Top"
+        <GroupBox Grid.Row="6" Header="日志" Padding="4" MinHeight="80">
+            <!-- 工单 34：日志文本显式顶对齐；工单 35：字体继承全局默认（与其余 UI 同源，中文为微软雅黑），字号 16（v0.2.4 由 14 上调） -->
+            <TextBox x:Name="LogBox" FontSize="16" VerticalContentAlignment="Top"
                      IsReadOnly="True" TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto" Background="White"/>
         </GroupBox>

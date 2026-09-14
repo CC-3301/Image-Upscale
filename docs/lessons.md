@@ -66,7 +66,7 @@
 - **现象**：日志字体两轮返工：Consolas → 维护者指名 SimHei 仍不满意。
 - **根源**：全局 XAML 从未设过 FontFamily，"其余中文"其实是 WPF 默认回退（微软雅黑）；给日志单独指定任何字体（等宽或黑体）都必然与其余文字不同源，"不统一"观感无解。
 - **教训**："和界面统一"类需求，正确动作是删掉控件的显式 FontFamily 让其继承全局默认，而不是再指定一个新字体名；动手前先查全局设没设。
-- **守卫**：视觉项无自动化测试；LogBox 现状只留 `FontSize="14"`，无 FontFamily。
+- **守卫**：视觉项无自动化测试；LogBox 现状只留 `FontSize="16"`（v0.2.4 由 14 上调），无 FontFamily。
 
 ## 3. 流程与分诊
 
@@ -123,7 +123,7 @@
 跨机器通用的坑：
 
 - **.bat 文件只写 ASCII**：cmd 按 ANSI 码页解析 batch，UTF-8 中文注释被误读后可能吞掉换行、把多行拼成一行执行（症状：报"某行中段 不是内部或外部命令"）。报错信息用英文。
-- **PATH 上的 dotnet 可能只是运行时**：`dotnet build` 报"下载 .NET SDK"即是；用 `dotnet --list-sdks` 验证是否有 8.x。
+- **PATH 上的 dotnet 可能只是运行时**：`dotnet build` 报"下载 .NET SDK"即是；用 `dotnet --list-sdks` 验证是否有 8.x。SDK 可能装在非标准位置（不在 package.ps1 的常见位置探测列表内）：用 `--list-sdks` 逐个验证候选 dotnet.exe，找到后设 `IU_DOTNET` 指向它，再跑构建/打包。
 - **Git Bash 调 cmd**：`cmd /c` 的 `/c` 被路径转换吃掉 → 用 `cmd //c "D:\\完整\\路径.bat"`。
 - **PowerShell 5.1 + 含中文的 .ps1**：无 BOM 的 UTF-8 被按 ANSI 解析、中文注释炸语法 → .ps1 存成 UTF-8 with BOM。
 - **测试跑法**：`set IU_ENGINE=<仓库>\bld\image-upscale.exe` 后 `python -m pytest tests -q`；测试统一 `-g -1`（CPU 后端）保证确定性，GPU 只留 smoke。
