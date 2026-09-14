@@ -10,7 +10,22 @@ $ErrorActionPreference = 'Stop'
 $repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $dist = Join-Path $repo "dist\$Version"
 $pkg = Join-Path $dist 'Image-Upscale'
-$dotnet = 'D:\Software\DotNet\dotnet.exe'
+# dotnet 探测：IU_DOTNET 环境变量 > PATH > 常见位置；必须含 .NET 8 SDK（PATH 上的可能只是运行时）
+function Find-DotNet {
+    if ($env:IU_DOTNET -and (Test-Path $env:IU_DOTNET)) { return $env:IU_DOTNET }
+    $cands = @()
+    $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($cmd) { $cands += $cmd.Source }
+    $cands += @(Join-Path $env:ProgramFiles 'dotnet\dotnet.exe')
+    if ($env:LOCALAPPDATA) { $cands += (Join-Path $env:LOCALAPPDATA 'Microsoft\dotnet\dotnet.exe') }
+    foreach ($c in $cands) {
+        if (-not $c -or -not (Test-Path $c)) { continue }
+        $sdks = & $c --list-sdks 2>$null
+        if ($sdks | Where-Object { $_ -match '^8\.' }) { return $c }
+    }
+    throw '未找到 .NET 8 SDK：PATH 上的 dotnet 可能只是运行时（用 dotnet --list-sdks 验证），或设置环境变量 IU_DOTNET 指向 SDK 的 dotnet.exe'
+}
+$dotnet = Find-DotNet
 
 if (Test-Path (Join-Path $dist 'Image-Upscale-win64.zip')) { throw "zip already exists: $dist\Image-Upscale-win64.zip（换一个 -Version）" }
 

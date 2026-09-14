@@ -91,13 +91,18 @@
 
 - `package.ps1` 输出到版本化目录（`dist/vX.Y.Z/`），从不对旧产物做删除；zip 同名冲突时报错提示换版本号。修复缺陷后的重新发布 = 新版本目录，旧包由人工处置。
 
-## 4. 本机工具链备忘（Windows）
+## 4. Windows 工具链（fork / 新机器必读）
 
-以下为该开发机的环境事实，任何配置文件里都查不到：
+构建与发布的依赖，脚本会自动探测，勿手写编译命令：
 
-- **cmake 不在 PATH**：用 MSVC 自带 `D:\Software\MSVC\...\CMake\bin\cmake.exe`，构建前需 `vcvars64.bat`——已封装在 `scripts\engine-build.bat`，不要手写编译命令。
-- **Git Bash 调 cmd**：`cmd /c` 的 `/c` 会被路径转换吃掉 → 用 `cmd //c "D:\\完整\\路径.bat"`。
+- **引擎**：VS2022（C++ 桌面开发 + "C++ CMake 工具"组件）与 Vulkan SDK → `scripts\engine-build.bat` 经 vswhere 自动定位；便携/非标准 VS 安装（vswhere 查不到）设环境变量 `IU_VS_PATH`，cmake 异常另设 `IU_CMAKE`
+- **GUI**：.NET 8 SDK → `package.ps1` 自动探测（`IU_DOTNET` > PATH > 常见位置，以 `--list-sdks` 验证 8.x）
+- **发布**：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`）
+
+跨机器通用的坑：
+
+- **.bat 文件只写 ASCII**：cmd 按 ANSI 码页解析 batch，UTF-8 中文注释被误读后可能吞掉换行、把多行拼成一行执行（症状：报"某行中段 不是内部或外部命令"）。报错信息用英文。
+- **PATH 上的 dotnet 可能只是运行时**：`dotnet build` 报"下载 .NET SDK"即是；用 `dotnet --list-sdks` 验证是否有 8.x。
+- **Git Bash 调 cmd**：`cmd /c` 的 `/c` 被路径转换吃掉 → 用 `cmd //c "D:\\完整\\路径.bat"`。
 - **PowerShell 5.1 + 含中文的 .ps1**：无 BOM 的 UTF-8 被按 ANSI 解析、中文注释炸语法 → .ps1 存成 UTF-8 with BOM。
-- **dotnet SDK** 在 `D:\Software\DotNet\dotnet.exe`（Program Files 里那个只有运行时，build/publish 会报"下载 SDK"）。
-- **测试跑法**：`set IU_ENGINE=<bld>\image-upscale.exe` 后 `python -m pytest tests -q`（conftest 默认的 `build/Release` 路径在本布局不存在）。
-- **测试对 CWD 的要求**：引擎现在按自身位置找 models，测试从仓库根跑即可；测试统一 `-g -1`（CPU 后端）保证确定性，GPU 只留 smoke。
+- **测试跑法**：`set IU_ENGINE=<仓库>\bld\image-upscale.exe` 后 `python -m pytest tests -q`；测试统一 `-g -1`（CPU 后端）保证确定性，GPU 只留 smoke。

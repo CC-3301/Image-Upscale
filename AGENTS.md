@@ -10,9 +10,9 @@
 
 ### Build / test / package 速查
 
-- 引擎构建：`scripts\engine-build.bat`（增量；已封装 vcvars/cmake 路径，勿手写编译命令）
+- 引擎构建：`scripts\engine-build.bat`（标准 VS 安装零配置；便携/非标准 MSVC 设 `IU_VS_PATH`，勿手写编译命令）
 - 测试：先 `set IU_ENGINE=<仓库>\bld\image-upscale.exe`，再 `python -m pytest tests -q`（conftest 默认路径在本布局不存在；lessons §4）
-- 打包：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；重新发布用新版本号，不删旧包）
+- 打包：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；非标准 dotnet 安装设 `IU_DOTNET`；重新发布用新版本号，不删旧包）
 
 ## Agent skills
 
