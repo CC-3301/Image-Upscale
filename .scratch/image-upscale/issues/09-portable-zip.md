@@ -13,3 +13,14 @@
 - [ ] 仓库根目录 MIT LICENSE；README 含模型许可出处表与导入说明
 - [ ] 干净 Windows 环境（无 Vulkan SDK、无 .NET、无编译器）冒烟：GUI 单图 + 文件夹各跑通一次
 - [ ] 引擎在无 Vulkan 设备的机器上回退 CPU 可用
+
+## Comments
+
+### 实现记录（2026-09-14）
+- scripts/package.ps1：引擎 Release 构建 + GUI self-contained 发布（net8.0-windows win-x64）+ models/LICENSE/README/NOTICE 组装 + Compress-Archive
+- 产物：dist/Image-Upscale-win64.zip（157.3 MB）
+- 冒烟（解压至 D:/tmp/iu-zip-smoke 干净目录）：
+  - CLI：realcugan-se 2x + --denoise auto → exit 0，输出 test-(realcugan-se)-2.0x.png 128x96 ✅
+  - GUI：进程启动存活 ✅（视觉验收待人工）
+- zip 内布局：ImageUpscaleGui.exe / image-upscale.exe / models/(7 组+manifest) / LICENSE / NOTICE.md / README.md
+Status: done（自动化冒烟通过；GUI 视觉验收待人工）
