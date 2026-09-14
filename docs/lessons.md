@@ -127,3 +127,4 @@
 - **Git Bash 调 cmd**：`cmd /c` 的 `/c` 被路径转换吃掉 → 用 `cmd //c "D:\\完整\\路径.bat"`。
 - **PowerShell 5.1 + 含中文的 .ps1**：无 BOM 的 UTF-8 被按 ANSI 解析、中文注释炸语法 → .ps1 存成 UTF-8 with BOM。
 - **测试跑法**：`set IU_ENGINE=<仓库>\bld\image-upscale.exe` 后 `python -m pytest tests -q`；测试统一 `-g -1`（CPU 后端）保证确定性，GPU 只留 smoke。
+- **GitHub 单文件 100MB 上限会拒推整个分支**（v0.2.2 发布）：`git add -A` 把 `.tmp-publish/` 里的 146MB exe 扫进历史，后续虽删但 blob 仍在 → push 被 pre-receive 拒。远端未收到时用 `git filter-branch --index-filter "git rm -r --cached --ignore-unmatch <路径>" -- <上次tag>..main` 重写未推送区段：树未被该文件影响的提交 SHA 不变，受影响的后代提交会全部换 SHA（changelog 里的链接要重新生成）；已推送后才发现就只能 BFG/filter-repo。预防：发版前 `git log --all -- <临时目录>/` 检查，`.gitignore` 覆盖临时目录。
