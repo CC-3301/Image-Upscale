@@ -112,6 +112,13 @@
 - **教训**：视觉需求的量化词（大/小、比例）先问清参照物（字号？画布占比？）再动手；要"字形铺满"只能几何拼装（mask + 竖条/半圆环自绘），文字渲染无解。工具坑：该版 PIL `rounded_rectangle` 不支持逐角 radius（传 tuple 直接 TypeError），几何形用 mask 拼装；RGBA 上量"白色像素 bbox"必须带 alpha 判据，否则抗锯齿/缩放振铃沿高亮边缘产生假白点。
 - **守卫**：定稿参数存 `make_logo_iu_geo.py`（pad160 留白档）；逐像素四边等宽已实测（各 160px）。
 
+### 3.9 发版版本号两处真相：package.ps1 -Version 与 GUI csproj <Version>（v0.2.4 覆盖发布）
+
+- **现象**：v0.2.4 重新打包后，GUI 标题栏仍显示 v0.2.3。
+- **根源**：版本号有两处真相——package.ps1 的 `-Version` 只决定 dist 目录/zip 名，而 GUI 标题栏（工单 31）运行时读 csproj `<Version>`；打包脚本不同步也不校验，发版漏改 csproj 无人拦截。
+- **教训**：发版动作清单必须包含"改 csproj `<Version>`"；同一版本号概念要么只留一处真相，要么在打包入口强校验。
+- **守卫**：候选守卫 = package.ps1 打包前校验 csproj `<Version>` 与 `-Version` 一致（不一致即报错），尚未实施，另行确认。
+
 ## 4. Windows 工具链（fork / 新机器必读）
 
 构建与发布的依赖，脚本会自动探测，勿手写编译命令：
