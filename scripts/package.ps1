@@ -14,8 +14,8 @@ $dotnet = 'D:\Software\DotNet\dotnet.exe'
 
 if (Test-Path (Join-Path $dist 'Image-Upscale-win64.zip')) { throw "zip already exists: $dist\Image-Upscale-win64.zip（换一个 -Version）" }
 
-# 1) 引擎（Release，增量构建）
-& cmd /c "D:\tmp\image-upscale-setup\build.bat" | Out-Null
+# 1) 引擎（Release，增量构建；构建入口已收编进 scripts/engine-build.bat）
+& cmd /c (Join-Path $repo 'scripts\engine-build.bat') | Out-Null
 if (-not (Test-Path (Join-Path $repo 'bld\image-upscale.exe'))) { throw 'engine build failed' }
 
 # 2) GUI self-contained 单文件发布（csproj 内含 PublishSingleFile / SatelliteResourceLanguages=zh-Hans）
