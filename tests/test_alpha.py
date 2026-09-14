@@ -26,7 +26,7 @@ def test_alpha_png_preserved(workdir):
     make_rgba(inp)
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.png"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.png"
     assert out.exists()
     img = Image.open(out)
     assert img.mode == "RGBA"
@@ -43,7 +43,7 @@ def test_alpha_webp_preserved(workdir):
     make_rgba(inp)
     p = run_engine(["-i", inp, "-f", "webp", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.webp"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.webp"
     assert out.exists()
     img = Image.open(out)
     assert img.mode == "RGBA"
@@ -58,7 +58,7 @@ def test_alpha_jpg_white_composite(workdir):
     make_rgba(inp)
     p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.jpg"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.jpg"
     assert out.exists()
     img = Image.open(out)
     assert img.mode == "RGB"
@@ -93,7 +93,7 @@ def test_no_alpha_no_regression(workdir):
     make_png(inp, size=(48, 32))
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.png"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.png"
     img = Image.open(out)
     assert img.mode == "RGB"
 
@@ -107,7 +107,7 @@ def test_alpha_large_png_no_crash(workdir):
     make_rgba(inp, size=(512, 512))
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.png"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.png"
     assert out.exists()
     img = Image.open(out)
     assert img.mode == "RGBA"
@@ -123,7 +123,7 @@ def test_alpha_large_webp_no_crash(workdir):
     make_rgba(inp, size=(512, 512))
     p = run_engine(["-i", inp, "-f", "webp", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.webp"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.webp"
     assert out.exists()
     img = Image.open(out)
     assert img.mode == "RGBA"
@@ -135,6 +135,6 @@ def test_alpha_large_jpg_no_crash(workdir):
     make_rgba(inp, size=(512, 512))
     p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / "in-(upconv7-anime)-2.0x.jpg"
+    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.jpg"
     assert out.exists()
     assert Image.open(out).mode == "RGB"

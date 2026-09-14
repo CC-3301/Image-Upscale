@@ -8,7 +8,7 @@ from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
 ENGINE = Path(os.environ.get("IU_ENGINE", REPO / "build" / "Release" / "image-upscale.exe"))
-MODEL = os.environ.get("IU_MODEL", "upconv7-anime")
+MODEL = os.environ.get("IU_MODEL", "waifu2x_upconv_7_art")
 
 needs_engine = pytest.mark.skipif(not ENGINE.exists(), reason="engine exe not built")
 

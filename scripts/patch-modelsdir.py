@@ -5,7 +5,7 @@ t = open(p, encoding="utf-8").read()
 ok = True
 
 # 1) 声明
-decl_anchor = '    path_t model_id = PATHSTR("upconv7-anime");\n'
+decl_anchor = '    path_t model_id = PATHSTR("waifu2x_upconv_7_art");\n'
 if "path_t models_dir = PATHSTR" not in t:
     if decl_anchor not in t:
         print("FAIL: decl anchor missing"); ok = False

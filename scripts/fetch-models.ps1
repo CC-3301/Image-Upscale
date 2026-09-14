@@ -39,11 +39,11 @@ function Extract-Prefix($zipPath, $prefix, $destName) {
     Write-Output "extracted: $destName"
 }
 
-# 1) waifu2x 系（upconv7-anime / cunet / upconv7-photo）
+# 1) waifu2x 系（waifu2x_upconv_7_art / waifu2x_cunet / waifu2x_upconv_7_photo；工单 30 改名）
 $w2xZip = Get-ReleaseAsset 'nihui/waifu2x-ncnn-vulkan' 'windows\.zip$'
-Extract-Prefix $w2xZip 'models-upconv_7_anime_style_art_rgb/' 'upconv_7_anime_style_art_rgb'
-Extract-Prefix $w2xZip 'models-cunet/' 'cunet'
-Extract-Prefix $w2xZip 'models-upconv_7_photo/' 'upconv_7_photo'
+Extract-Prefix $w2xZip 'models-upconv_7_anime_style_art_rgb/' 'waifu2x_upconv_7_art'
+Extract-Prefix $w2xZip 'models-cunet/' 'waifu2x_cunet'
+Extract-Prefix $w2xZip 'models-upconv_7_photo/' 'waifu2x_upconv_7_photo'
 
 # 2) Real-CUGAN pro/se
 $cuganZip = Get-ReleaseAsset 'nihui/realcugan-ncnn-vulkan' 'windows\.zip$'

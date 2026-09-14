@@ -14,14 +14,14 @@ def _smoke(workdir, model, scale):
 
 @needs_engine
 @pytest.mark.parametrize("model,scale,outsize", [
-    ("upconv7-anime", 2, (96, 64)),
-    ("cunet", 2, (96, 64)),
+    ("waifu2x_upconv_7_art", 2, (96, 64)),
+    ("waifu2x_cunet", 2, (96, 64)),
     ("realcugan-pro", 2, (96, 64)),
     ("realcugan-se", 2, (96, 64)),
     ("realcugan-se", 4, (192, 128)),
     ("digital-art-4x", 4, (192, 128)),
     ("realesr-general-x4v3", 4, (192, 128)),
-    ("upconv7-photo", 2, (96, 64)),
+    ("waifu2x_upconv_7_photo", 2, (96, 64)),
 ])
 def test_all_bundled_models_cpu(workdir, model, scale, outsize):
     p, inp = _smoke(workdir, model, scale)
@@ -36,9 +36,9 @@ def test_denoise_levels_naming_and_success(workdir):
     inp = workdir / "in.png"
     make_png(inp)
     for level, tag in [("low", "n1"), ("mid", "n2"), ("high", "n3")]:
-        p = run_engine(["-i", inp, "-m", "cunet", "--denoise", level, "-f", "png", "-g", "-1"])
+        p = run_engine(["-i", inp, "-m", "waifu2x_cunet", "--denoise", level, "-f", "png", "-g", "-1"])
         assert p.returncode == 0, p.stderr
-        out = workdir / f"in-(cunet)-{tag}-2.0x.png"
+        out = workdir / f"in-(waifu2x_cunet)-{tag}-2.0x.png"
         assert out.exists(), f"missing {out}"
 
 
@@ -61,8 +61,8 @@ def test_scale_validation_per_model(workdir):
     p = run_engine(["-i", inp, "-m", "realcugan-se", "-s", "3", "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
     assert (workdir / "in-(realcugan-se)-3.0x.png").exists()
-    # upconv7-anime 无 4x → 参数错误
-    p2 = run_engine(["-i", inp, "-m", "upconv7-anime", "-s", "4", "-g", "-1"])
+    # waifu2x_upconv_7_art 无 4x → 参数错误
+    p2 = run_engine(["-i", inp, "-m", "waifu2x_upconv_7_art", "-s", "4", "-g", "-1"])
     assert p2.returncode == 1
 
 
@@ -70,10 +70,10 @@ def test_scale_validation_per_model(workdir):
 def test_denoise_naming_none_has_no_segment(workdir):
     inp = workdir / "in.png"
     make_png(inp)
-    p = run_engine(["-i", inp, "-m", "cunet", "-f", "png", "-g", "-1"])
+    p = run_engine(["-i", inp, "-m", "waifu2x_cunet", "-f", "png", "-g", "-1"])
     assert p.returncode == 0
-    assert (workdir / "in-(cunet)-2.0x.png").exists()
-    assert not (workdir / "in-(cunet)-n0-2.0x.png").exists()
+    assert (workdir / "in-(waifu2x_cunet)-2.0x.png").exists()
+    assert not (workdir / "in-(waifu2x_cunet)-n0-2.0x.png").exists()
 
 
 # ---- 工单 16 缺陷修复：models/manifest.conf 按引擎自身位置解析，不再强依赖 CWD ----
@@ -97,7 +97,7 @@ def test_models_resolved_relative_to_engine_exe(tmp_path, workdir):
     # 输入不存在时若清单解析成功会推进到输入校验（"input file not readable"）；
     # 若清单仍按 CWD 解析失败，则是 "cannot read models/manifest.conf"
     p = subprocess.run(
-        [str(engine_copy), "-i", str(workdir / "no-such.png"), "-m", "upconv7-anime", "-g", "-1"],
+        [str(engine_copy), "-i", str(workdir / "no-such.png"), "-m", "waifu2x_upconv_7_art", "-g", "-1"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=engine_dir)
     assert "cannot read models/manifest.conf" not in p.stderr, p.stderr
 
@@ -115,7 +115,7 @@ def test_explicit_models_dir_wins(tmp_path, workdir):
 
     # CWD=repo 根（models/ 可用）但显式指定 alt：清单应从 alt 读（同样推进到输入校验）
     p = subprocess.run(
-        [str(ENGINE), "-i", str(workdir / "no-such.png"), "-m", "upconv7-anime",
+        [str(ENGINE), "-i", str(workdir / "no-such.png"), "-m", "waifu2x_upconv_7_art",
          "--models-dir", str(alt), "-g", "-1"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO)
     assert "cannot read models/manifest.conf" not in p.stderr, p.stderr

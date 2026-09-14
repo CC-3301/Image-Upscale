@@ -42,7 +42,7 @@ static void print_usage()
 {
     fprintf(stdout, "Usage: image-upscale -i input-path [options]...\n\n");
     fprintf(stdout, "  -i input-path        input image (jpg/jpeg/png/webp) or directory\n");
-    fprintf(stdout, "  -m model-id          model id from models/manifest.conf (default: upconv7-anime)\n");
+    fprintf(stdout, "  -m model-id          model id from models/manifest.conf (default: waifu2x_upconv_7_art)\n");
     fprintf(stdout, "  -s scale             ratio mode: native scale of the model (default: 2.0)\n");
     fprintf(stdout, "  --width N            target-size mode: target width (exclusive with -s/--height)\n");
     fprintf(stdout, "  --height N           target-size mode: target height (exclusive with -s/--width)\n");
@@ -756,7 +756,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
 int PATH_MAIN(int argc, wchar_t** argv)
 {
     path_t inputpath;
-    path_t model_id = PATHSTR("upconv7-anime");
+    path_t model_id = PATHSTR("waifu2x_upconv_7_art");
     path_t models_dir = PATHSTR("models");
     bool models_dir_given = false;
     double scale_arg = 2.0;
