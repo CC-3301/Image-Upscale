@@ -96,3 +96,45 @@ def test_no_alpha_no_regression(workdir):
     out = workdir / "in-(upconv7-anime)-2.0x.png"
     img = Image.open(out)
     assert img.mode == "RGB"
+
+
+# ---- 工单 15：大图 alpha 合并缓冲悬垂指针（≥0.5MB 缓冲 free 即去提交 → 0xC0000005）----
+
+@needs_engine
+def test_alpha_large_png_no_crash(workdir):
+    # 输出 1024x1024，合并缓冲 4MB：旧代码必崩（小图侥幸不崩，无法拦截本缺陷）
+    inp = workdir / "in.png"
+    make_rgba(inp, size=(512, 512))
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-2.0x.png"
+    assert out.exists()
+    img = Image.open(out)
+    assert img.mode == "RGBA"
+    assert img.size == (1024, 1024)
+    px = img.load()
+    assert px[100, 100][3] == 255
+    assert px[900, 100][3] == 0
+
+
+@needs_engine
+def test_alpha_large_webp_no_crash(workdir):
+    inp = workdir / "in.png"
+    make_rgba(inp, size=(512, 512))
+    p = run_engine(["-i", inp, "-f", "webp", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-2.0x.webp"
+    assert out.exists()
+    img = Image.open(out)
+    assert img.mode == "RGBA"
+
+
+@needs_engine
+def test_alpha_large_jpg_no_crash(workdir):
+    inp = workdir / "in.png"
+    make_rgba(inp, size=(512, 512))
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-2.0x.jpg"
+    assert out.exists()
+    assert Image.open(out).mode == "RGB"

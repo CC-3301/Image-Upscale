@@ -495,6 +495,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         // alpha 处理（工单 04）：PNG/WebP 输出保留并同步放大；JPG 输出与白底合成
         bool has_alpha = false;
         std::vector<unsigned char> alpha_src;
+        std::vector<unsigned char> alpha_merged; // 工单 15：生存期必须覆盖合并→编码→写盘（旧代码块作用域导致 use-after-free）
         if (c == 4 && format != PATHSTR("jpg"))
         {
             has_alpha = true;
@@ -677,16 +678,16 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                 fail(false, "resize failed", inpath);
                 continue;
             }
-            std::vector<unsigned char> merged((size_t)outimage.w * outimage.h * 4);
+            alpha_merged.resize((size_t)outimage.w * outimage.h * 4);
             const unsigned char* rgbp = (const unsigned char*)outimage.data;
             for (int i = 0; i < outimage.w * outimage.h; i++)
             {
-                merged[(size_t)i * 4] = rgbp[(size_t)i * 3];
-                merged[(size_t)i * 4 + 1] = rgbp[(size_t)i * 3 + 1];
-                merged[(size_t)i * 4 + 2] = rgbp[(size_t)i * 3 + 2];
-                merged[(size_t)i * 4 + 3] = ((const unsigned char*)alpha_out.data)[i];
+                alpha_merged[(size_t)i * 4] = rgbp[(size_t)i * 3];
+                alpha_merged[(size_t)i * 4 + 1] = rgbp[(size_t)i * 3 + 1];
+                alpha_merged[(size_t)i * 4 + 2] = rgbp[(size_t)i * 3 + 2];
+                alpha_merged[(size_t)i * 4 + 3] = ((const unsigned char*)alpha_out.data)[i];
             }
-            outimage = ncnn::Mat(outimage.w, outimage.h, (void*)merged.data(), (size_t)4, 4);
+            outimage = ncnn::Mat(outimage.w, outimage.h, (void*)alpha_merged.data(), (size_t)4, 4);
         }
 
         // 编码（按输出格式；质量参数作用于 jpg/webp）
