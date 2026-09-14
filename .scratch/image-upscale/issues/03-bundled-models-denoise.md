@@ -6,7 +6,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done（自动化验收全绿）
 
 - [ ] 六组打包模型全部可被引擎加载推理，许可均为可再分发（MIT/BSD-3/Upscayl 官方允许项）
 - [ ] 模型元数据清单存在且被引擎使用；GUI 与引擎共享同一份

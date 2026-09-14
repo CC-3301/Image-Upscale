@@ -6,7 +6,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done（自动化验收全绿）
 
 - [ ] 降噪参数接受 AUTO；估计输出规范档位并经模型映射执行
 - [ ] 选档结果在 verbose 输出中可观测（规范档位 + 模型侧落点），供测试断言

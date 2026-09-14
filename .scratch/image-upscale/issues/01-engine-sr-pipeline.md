@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done（自动化验收全绿）
 
 - [ ] 以首个打包漫画模型对单张 .png/.jpg/.jpeg/.webp 输入完成 2x 超分，产物命名为 `A-(模型名)-2.0x`（文件夹输入）或同目录 `A-(模型名)-2.0x.<输出后缀>`（单文件输入）；模型名段用括号包裹
 - [ ] 输出格式 JPG（默认，质量默认 90）/PNG/WebP 可选，不跟随输入格式

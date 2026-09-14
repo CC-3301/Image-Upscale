@@ -6,7 +6,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done（自动化验收全绿）
 
 - [ ] 带 alpha 的输入 + PNG 输出：alpha 通道经超分后合成，透明/半透明区域正确
 - [ ] 带 alpha 的输入 + WebP 输出：同上
