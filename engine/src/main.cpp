@@ -345,6 +345,19 @@ static std::wstring widen(const std::string& s)
     return std::wstring(s.begin(), s.end());
 }
 
+// 宽字符 → UTF-8（工单 17：%ls 在输出重定向下经 C locale 转为 ANSI 码页（中文 Windows = GBK），
+// GUI 按 UTF-8 解码必乱码；统一显式转 UTF-8 后输出）
+static std::string utf8_from_wide(const std::wstring& w)
+{
+    if (w.empty())
+        return std::string();
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, NULL, NULL, NULL);
+    std::string s((size_t)n, '\0');
+    if (n > 0)
+        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, NULL, NULL);
+    return s;
+}
+
 // 高质量等比缩放（Catmull-Rom；通道数 1/3/4；输出为 uchar 交错布局）
 static bool resize_rgb(const ncnn::Mat& src, ncnn::Mat& dst, int out_w, int out_h, int channels)
 {
@@ -430,7 +443,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         fflush(stdout);
     };
     auto fail = [&](bool inference_failure, const char* msg, const path_t& path) {
-        fprintf(stderr, "%s: %ls\n", msg, path.c_str());
+        fprintf(stderr, "%s: %s\n", msg, utf8_from_wide(path).c_str());
         if (inference_failure)
             infer_failures++;
         else
@@ -539,7 +552,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
 
         if (verbose)
         {
-            fprintf(stderr, "loaded %ls (%dx%d)\n", inpath.c_str(), w, h);
+            fprintf(stderr, "loaded %s (%dx%d)\n", utf8_from_wide(inpath).c_str(), w, h);
         }
 
         // 目标尺寸模式的每文件决策：指定维度 ≥ 原图 → 超分；< 原图 → 直通缩放
@@ -718,10 +731,8 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             fail(false, "encode image failed", outpath);
             continue;
         }
-        if (verbose)
-        {
-            fprintf(stderr, "%ls -> %ls done\n", inpath.c_str(), outpath.c_str());
-        }
+        // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8，工单 17）
+        printf("%s -> %s done\n", utf8_from_wide(inpath).c_str(), utf8_from_wide(outpath).c_str());
 
         advance_progress();
     }
@@ -762,6 +773,9 @@ int PATH_MAIN(int argc, wchar_t** argv)
     int verbose = 0;
 
     setlocale(LC_ALL, "");
+
+    // 控制台直跑时切 UTF-8 输出码页（管道重定向不受影响，字节本就是 UTF-8；工单 17）
+    SetConsoleOutputCP(CP_UTF8);
 
     for (int i = 1; i < argc; i++)
     {
@@ -836,7 +850,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
         }
         else
         {
-            fprintf(stderr, "unknown or incomplete argument: %ls\n", a);
+            fprintf(stderr, "unknown or incomplete argument: %s\n", utf8_from_wide(a).c_str());
             print_usage();
             return EXIT_PARAM;
         }
@@ -904,7 +918,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
     }
     if (!mi)
     {
-        fprintf(stderr, "unknown model id: %ls\n", model_id.c_str());
+        fprintf(stderr, "unknown model id: %s\n", utf8_from_wide(model_id).c_str());
         return EXIT_PARAM;
     }
 
@@ -984,7 +998,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
         std::filesystem::create_directories(out_dir_path, ec);
         if (ec)
         {
-            fprintf(stderr, "cannot create output directory: %ls (%s)\n", output_dir.c_str(), ec.message().c_str());
+            fprintf(stderr, "cannot create output directory: %s (%s)\n", utf8_from_wide(output_dir).c_str(), ec.message().c_str());
             return EXIT_IO;
         }
 
@@ -1011,7 +1025,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
 
         if (input_files.empty())
         {
-            fprintf(stderr, "no matching image files (jpg/jpeg/png/webp) in: %ls\n", inputpath.c_str());
+            fprintf(stderr, "no matching image files (jpg/jpeg/png/webp) in: %s\n", utf8_from_wide(inputpath).c_str());
             return EXIT_PARAM;
         }
     }
@@ -1019,12 +1033,12 @@ int PATH_MAIN(int argc, wchar_t** argv)
     {
         if (!ext_is_image(get_file_extension(inputpath)))
         {
-            fprintf(stderr, "unsupported input file type: %ls (jpg/jpeg/png/webp)\n", inputpath.c_str());
+            fprintf(stderr, "unsupported input file type: %s (jpg/jpeg/png/webp)\n", utf8_from_wide(inputpath).c_str());
             return EXIT_PARAM;
         }
         if (!filepath_is_readable(inputpath))
         {
-            fprintf(stderr, "input file not readable: %ls\n", inputpath.c_str());
+            fprintf(stderr, "input file not readable: %s\n", utf8_from_wide(inputpath).c_str());
             return EXIT_IO;
         }
         input_files.push_back(inputpath);
