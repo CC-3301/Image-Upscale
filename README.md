@@ -1,24 +1,31 @@
 # Image-Upscale
 
-本地图像超分辨率工具（GUI + CLI 同核），waifu2x-caffe 的现代继任者：推理基于 ncnn + Vulkan，N/A/Intel 全 vendor 显卡通用并有 CPU 兜底。
+本地图像超分辨率工具（GUI + CLI 同核），waifu2x-caffe 的现代继任者：推理基于 ncnn + Vulkan，Nvidia/AMD/Intel 显卡通用并有 CPU 兜底。**本项目全程由 AI 开发。**
 
-术语表见 [CONTEXT.md](./CONTEXT.md)；关键决策见 [docs/adr/](./docs/adr/)；规格与工单见 [.scratch/image-upscale/](./.scratch/image-upscale/)。
+术语表见 [CONTEXT.md](./CONTEXT.md)；关键决策见 [docs/adr/](./docs/adr/)；踩坑清单见 [docs/lessons.md](./docs/lessons.md)；规格与工单见 [.scratch/image-upscale/](./.scratch/image-upscale/)。
 
 ## 当前状态
 
-工单 01（引擎端到端超分链路）实施中。
+**v0.2.1 已发布**：从 [Releases](https://github.com/CC-3301/Image-Upscale/releases/latest) 下载 zip 解压即用（根目录仅 GUI exe + engine/ + models/）。
+
+后续迭代工单见 [.scratch/image-upscale/issues/](./.scratch/image-upscale/issues/)；全部工单状态以文件内 `Status:` 行为准。
 
 ## 构建（Windows）
 
-前置：Visual Studio Build Tools 2022（C++ 桌面开发）、Vulkan SDK、CMake（Build Tools 自带）。
+前置：Visual Studio 2022（C++ 桌面开发 + "C++ CMake 工具"组件）、Vulkan SDK、.NET 8 SDK。标准安装下脚本自动探测工具链；便携/非标准安装用环境变量覆盖（`IU_VS_PATH` / `IU_CMAKE` / `IU_DOTNET`），详见 [docs/lessons.md](./docs/lessons.md) §4。
 
 ```powershell
 git submodule update --init --recursive
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
-```
 
-产物：`build/Release/image-upscale.exe`
+# 引擎（ncnn + Vulkan + CPU）
+scripts\engine-build.bat          # 产物：bld\image-upscale.exe
+
+# GUI（WPF，.NET 8）
+dotnet build gui\ImageUpscaleGui.csproj -c Release
+
+# 一键打包 portable zip（含引擎/GUI/模型，输出 dist\vX.Y.Z\）
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version v0.2.1
+```
 
 ## 模型获取
 

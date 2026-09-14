@@ -11,7 +11,7 @@ Status: ready-for-agent
 
 ## Solution
 
-一个解压即用的 Windows 工具（GUI + CLI 同核），推理引擎基于 ncnn + Vulkan，不绑死 CUDA 版本，N/A/Intel 全 vendor 显卡通用并有 CPU 兜底。内置按图像类型分组的现代模型（漫画、插画、照片、通用，以保线稿、保网点、拒绝过度涂抹为选型标准），支持从 waifu2x-caffe 延续下来的核心使用习惯：倍率模式、目标尺寸模式（宽/高二选一）、直通缩放、递归批处理（仅顶层重命名）、降噪档位（含 AUTO）与输出格式/质量控制。
+一个解压即用的 Windows 工具（GUI + CLI 同核），推理引擎基于 ncnn + Vulkan，不绑死 CUDA 版本，Nvidia/AMD/Intel 显卡通用并有 CPU 兜底。内置按图像类型分组的现代模型（漫画、插画、照片、通用，以保线稿、保网点、拒绝过度涂抹为选型标准），支持从 waifu2x-caffe 延续下来的核心使用习惯：倍率模式、目标尺寸模式（宽/高二选一）、直通缩放、递归批处理（仅顶层重命名）、降噪档位（含 AUTO）与输出格式/质量控制。
 
 ## User Stories
 

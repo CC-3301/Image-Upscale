@@ -4,7 +4,7 @@ status: accepted
 
 # 0001 - 推理引擎采用 ncnn + Vulkan，引擎独立成 exe
 
-waifu2x-caffe 死于绑死旧版 Caffe/CUDA：新显卡（RTX 50 系需 CUDA 12.8+）无法运行，且上游停更。本项目把推理完全交给 ncnn（Vulkan 后端 + CPU 后端），模型统一为 ncnn `.param/.bin` 格式，推理引擎编译为独立 exe（GUI 通过进程调用它）。这样 N/A/Intel 全 vendor 通用、不受 CUDA 版本绑架、CLI 免费获得，代价是放弃 DAT/SwinIR 等 transformer 架构模型（ncnn 上无法高效运行）与 PyTorch 生态的模型即插即用。
+waifu2x-caffe 死于绑死旧版 Caffe/CUDA：新显卡（RTX 50 系需 CUDA 12.8+）无法运行，且上游停更。本项目把推理完全交给 ncnn（Vulkan 后端 + CPU 后端），模型统一为 ncnn `.param/.bin` 格式，推理引擎编译为独立 exe（GUI 通过进程调用它）。这样 Nvidia/AMD/Intel 全 vendor 通用、不受 CUDA 版本绑架、CLI 免费获得，代价是放弃 DAT/SwinIR 等 transformer 架构模型（ncnn 上无法高效运行）与 PyTorch 生态的模型即插即用。
 
 ## Considered Options
 
