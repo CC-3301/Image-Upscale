@@ -187,6 +187,7 @@ public partial class MainWindow : Window
         args.Append(" -f ").Append(fmt.ToLower());
         if (fmt != "PNG")
             args.Append(" -q ").Append((int)QualitySlider.Value);
+        args.Append(" -v"); // 逐文件明细（工单 08 汇总）
 
         Log($"开始：{Path.GetFileName(input)}（{m.Display}）");
 
@@ -216,13 +217,29 @@ public partial class MainWindow : Window
                         Progress.Value = 100;
                         ProgressText.Text = "完成";
                     }
+                    else if (line.EndsWith(" done"))
+                    {
+                        var src = line[..^5];
+                        var name = Path.GetFileName(src.Trim());
+                        Log("✔ 成功：" + name);
+                    }
                     else
                     {
                         Log(line);
                     }
                 });
             },
-            line => { Dispatcher.Invoke(() => Log(line)); }));
+            line =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    if (line.StartsWith("inference failed: ") || line.StartsWith("decode image failed: ")
+                        || line.StartsWith("encode image failed: "))
+                        Log("✘ 失败：" + line[(line.IndexOf(':') + 2)..]);
+                    else
+                        Log(line);
+                });
+            }));
 
         StartButton.IsEnabled = true;
         _running = null;
