@@ -40,7 +40,7 @@ public partial class MainWindow : Window
     private int _etaLastDone;
 
     // 工单 13：滑条 ↔ 输入框同步的重入保护
-    private bool _qualitySyncing;
+    private int _quality = 90;
 
     public MainWindow()
     {
@@ -109,11 +109,10 @@ public partial class MainWindow : Window
         var fmtIdx = s.OutputExt switch { "jpg" => 0, "png" => 1, "webp" => 2, _ => 0 };
         FormatBox.SelectedIndex = fmtIdx;
 
-        // 质量
-        if (s.OutputQuality >= 0 && s.OutputQuality <= 100)
-            QualitySlider.Value = s.OutputQuality;
-        else
-            OnQualitySliderChanged(null, null); // 确保输入框与滑条初始一致
+        // 质量：真源为输入框（v0.2.4 去滑条），非法存储值回退默认 90
+        var q = (s.OutputQuality >= 0 && s.OutputQuality <= 100) ? s.OutputQuality : 90;
+        _quality = q;
+        QualityInput.Text = q.ToString();
     }
 
     // ---- 工单 25：恢复窗口几何（逐项校验，与 setting.ini 其余项同款静默回退语义）----
@@ -195,35 +194,24 @@ public partial class MainWindow : Window
         }
     }
 
-    // ---- 工单 13：质量滑条 ↔ 输入框双向同步 ----
-    private void OnQualitySliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (QualityInput == null || _qualitySyncing) return;
-        _qualitySyncing = true;
-        QualityInput.Text = ((int)QualitySlider.Value).ToString();
-        _qualitySyncing = false;
-    }
-
+    // ---- 工单 13 → v0.2.4：质量去滑条，真源为 _quality，输入框失焦规整 ----
     private void OnQualityInputChanged(object sender, TextChangedEventArgs e)
     {
-        if (QualitySlider == null || _qualitySyncing) return;
         if (int.TryParse(QualityInput.Text, out var q))
-        {
-            q = Math.Clamp(q, 0, 100);
-            _qualitySyncing = true;
-            QualitySlider.Value = q;
-            _qualitySyncing = false;
-        }
+            _quality = Math.Clamp(q, 0, 100);
     }
 
-    // 非法输入（非数字/超界残留文本）在失焦时回退为滑条当前值
+    // 非法输入（非数字/超界残留文本）在失焦时回退为最后有效值
     private void OnQualityInputLostFocus(object sender, RoutedEventArgs e)
     {
-        if (!int.TryParse(QualityInput.Text, out var q) || q != (int)QualitySlider.Value)
+        if (int.TryParse(QualityInput.Text, out var q))
         {
-            _qualitySyncing = true;
-            QualityInput.Text = ((int)QualitySlider.Value).ToString();
-            _qualitySyncing = false;
+            _quality = Math.Clamp(q, 0, 100);
+            QualityInput.Text = _quality.ToString(); // 规整（如 "007"→"7"）
+        }
+        else
+        {
+            QualityInput.Text = _quality.ToString();
         }
     }
 
@@ -309,7 +297,7 @@ public partial class MainWindow : Window
         if (fmt != "PNG")
         {
             args.Add("-q");
-            args.Add(((int)QualitySlider.Value).ToString());
+            args.Add(_quality.ToString());
         }
         args.Add("-v"); // 逐文件明细（stderr）
 
@@ -429,7 +417,7 @@ public partial class MainWindow : Window
             s.ScaleWidth = int.TryParse(WidthBox.Text, out var w) && w > 0 ? w : 0;
             s.ScaleHeight = int.TryParse(HeightBox.Text, out var h) && h > 0 ? h : 0;
             s.OutputExt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString()?.ToLower() ?? "jpg";
-            s.OutputQuality = (int)QualitySlider.Value;
+            s.OutputQuality = _quality;
         }
 
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
