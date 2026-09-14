@@ -16,10 +16,10 @@
 - 测试：先 `set IU_ENGINE=<仓库>\bld\image-upscale.exe`，再 `python -m pytest tests -q`（conftest 默认路径在本布局不存在；lessons §4）
 - 打包：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；非标准 dotnet 安装设 `IU_DOTNET`；重新发布用新版本号，不删旧包）
 
-**坑清单（`docs/lessons.md`）维护规则**：
+**记忆维护规则（`AGENTS.md` 本文件与 `docs/lessons.md`）**：
 
-- 更新 `docs/lessons.md` 前必须先向维护者提案确认，不得擅自写入。
-- lessons.md 随仓库公开（clone / fork / build 用户均可见），禁止写入本机特定信息（绝对路径、盘符、机器名、环境变量实际值等），只写对所有环境通用可复现的描述。
+- 更新前必须先向维护者提案确认，不得擅自写入。
+- 随仓库公开（clone / fork / build 用户均可见），禁止写入本机特定信息（绝对路径、盘符、机器名、环境变量实际值等），只写对所有环境通用可复现的描述。
 - **发布前确认（固定流程）**：push、打 tag、GitHub Release 等一切对外发布动作，必须先列明发布内容（版本号、tag、Release notes、资产）请维护者明确同意后才能执行，不得擅自发布。
 - **发布前清理（固定流程）**：发出发布请求前，列清本次迭代产生的临时物（.tmp-publish、pytest 缓存、.scratch 已否决候选存档、无用脚本等），按全局删除安全规则经维护者确认后删除，再请求发布。dist 旧版本目录按零删除原则保留，不属清理对象。
 - **测试后 dist 只留压缩包**：解压验证/冒烟完成后，删除 `dist/<版本>/Image-Upscale/` 解压文件夹，只保留 zip（含旧版本归档；删除前仍按全局规则列路径确认）。package.ps1 的零删除原则只约束打包动作本身，不约束本清理步骤。

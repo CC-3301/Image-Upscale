@@ -16,6 +16,7 @@
         </Style>
         <Style TargetType="Button">
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="BorderThickness" Value="0"/>
         </Style>
     </Window.Resources>
     <Grid Margin="14">
@@ -32,7 +33,7 @@
         <!-- 输入（工单 11：可编辑；输入框自身支持拖入） -->
         <GroupBox Grid.Row="0" Header="输入（支持拖入文件或文件夹）" Padding="8" Margin="0,0,0,8">
             <DockPanel>
-                <Button DockPanel.Dock="Right" Content="浏览…" Width="80" Click="OnBrowse"/>
+                <Button DockPanel.Dock="Right" Content="浏览…" Width="80" Margin="6,0,0,0" Click="OnBrowse"/>
                 <TextBox x:Name="InputBox" Background="White" Height="28"
                          PreviewDragOver="OnInputPreviewDragOver" PreviewDrop="OnInputPreviewDrop"/>
             </DockPanel>
@@ -60,24 +61,31 @@
 
         <!-- 降噪 + 输出 -->
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
+            <!-- v0.2.5：标签与控件各自成组（StackPanel），WrapPanel 窄窗口整体换行，不再拆散"质量："与其滑条/输入框 -->
             <WrapPanel>
-                <TextBlock Text="降噪：" VerticalAlignment="Center"/>
-                <ComboBox x:Name="DenoiseBox" Width="90" Margin="0,0,6,0"/>
-                <TextBlock x:Name="DenoiseHint" Text="该模型不支持降噪" Foreground="Gray"
-                           VerticalAlignment="Center" Margin="0,0,16,0" Visibility="Collapsed"/>
-                <TextBlock Text="输出格式：" VerticalAlignment="Center"/>
-                <ComboBox x:Name="FormatBox" Width="90" Margin="0,0,16,0" SelectedIndex="0">
-                    <ComboBoxItem Content="JPG"/>
-                    <ComboBoxItem Content="PNG"/>
-                    <ComboBoxItem Content="WebP"/>
-                </ComboBox>
-                <TextBlock Text="质量：" VerticalAlignment="Center"/>
-                <Slider x:Name="QualitySlider" Width="160" Minimum="0" Maximum="100"
-                        Value="90" IsSnapToTickEnabled="True" TickFrequency="1"
-                        VerticalAlignment="Center" ValueChanged="OnQualitySliderChanged"/>
-                <!-- 工单 13：质量支持手动输入 -->
-                <TextBox x:Name="QualityInput" Width="48" Margin="8,0,0,0"
-                         TextChanged="OnQualityInputChanged" LostFocus="OnQualityInputLostFocus"/>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="降噪：" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="DenoiseBox" Width="90" Margin="0,0,6,0"/>
+                    <TextBlock x:Name="DenoiseHint" Text="该模型不支持降噪" Foreground="Gray"
+                               VerticalAlignment="Center" Margin="0,0,16,0" Visibility="Collapsed"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="输出格式：" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="FormatBox" Width="90" Margin="0,0,16,0" SelectedIndex="0">
+                        <ComboBoxItem Content="JPG"/>
+                        <ComboBoxItem Content="PNG"/>
+                        <ComboBoxItem Content="WebP"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="质量：" VerticalAlignment="Center"/>
+                    <Slider x:Name="QualitySlider" Width="160" Minimum="0" Maximum="100"
+                            Value="90" IsSnapToTickEnabled="True" TickFrequency="1"
+                            VerticalAlignment="Center" ValueChanged="OnQualitySliderChanged"/>
+                    <!-- 工单 13：质量支持手动输入 -->
+                    <TextBox x:Name="QualityInput" Width="48" Margin="8,0,0,0"
+                             TextChanged="OnQualityInputChanged" LostFocus="OnQualityInputLostFocus"/>
+                </StackPanel>
             </WrapPanel>
         </GroupBox>
 
