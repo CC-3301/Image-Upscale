@@ -13,3 +13,19 @@
 - [ ] 产物命名与 CLI 完全一致
 - [ ] 界面全部中文，无英文残留
 - [ ] GUI 不设自动化测试，手动验收清单通过（写入工单评论）
+
+## Comments
+
+### 实现记录（2026-09-14）
+- 引擎定位：exe 同级 / 上溯 bld 目录；models 目录同级或上溯解析
+- 构建：dotnet build gui/ImageUpscaleGui.csproj -c Release（.NET SDK 8.0.425 @ D:\Software\DotNet）
+- 启动冒烟：进程存活、窗口创建 ✅（自动化可测部分）
+- 手动验收清单（需人工过一遍）：
+  1. 拖入单张 PNG → 路径显示
+  2. 选模型（分组显示 display 名）→ 倍率选项随模型原生倍数变化
+  3. 降噪选项：digital-art-4x 时除"无"外全部隐藏/禁用；Real-CUGAN 显示 AUTO/无/低/中/高
+  4. 尺寸模式三选一切换正常
+  5. 开始处理 → 进度条按 progress d/t 前进 → 完成提示
+  6. 产物命名与 CLI 完全一致（A-(模型名)-2.0x.jpg）
+  7. 全程仅中文
+Status: ready-for-agent（实现完成，待人工过清单）

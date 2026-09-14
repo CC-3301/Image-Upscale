@@ -23,3 +23,7 @@ bld-asan/
 
 # pnnx 转换临时目录
 .tmp-convert/
+
+# GUI 构建产物
+gui/bin/
+gui/obj/

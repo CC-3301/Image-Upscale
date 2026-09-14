@@ -51,6 +51,7 @@ static void print_usage()
     fprintf(stdout, "  -q quality           output quality 0-100 for jpg/webp (default: 90)\n");
     fprintf(stdout, "  -t tile-size         tile size (>=32/0=auto, default: 0)\n");
     fprintf(stdout, "  -g gpu-id            gpu device (-1=cpu, default: auto)\n");
+    fprintf(stdout, "  --models-dir path    models directory (default: models)\n");
     fprintf(stdout, "  -v                   verbose output\n");
     fprintf(stdout, "  -h                   show this help\n");
 }
@@ -330,6 +331,14 @@ static int estimate_denoise_level(const unsigned char* rgb, int w, int h)
     return 0;
 }
 
+// 模型目录规范化（确保尾部分隔符，便于拼接 manifest.conf）
+static std::wstring mi_dir(const std::wstring& dir)
+{
+    if (!dir.empty() && dir.back() != L'/')
+        return dir + L"/";
+    return dir;
+}
+
 // ASCII → 宽字符（清单 id/变体 token 均为 ASCII，足够）
 static std::wstring widen(const std::string& s)
 {
@@ -360,10 +369,10 @@ static int pick_native_scale(const ModelInfo& mi, double ratio)
 }
 
 // ---- 模型文件解析（按架构与倍数/降噪档） ----
-static void resolve_model_files(const ModelInfo& mi, int scale, int denoise_level,
+static void resolve_model_files(const std::wstring& models_dir, const ModelInfo& mi, int scale, int denoise_level,
                                 path_t& parampath, path_t& binpath, int& prepadding)
 {
-    path_t model_dir = PATHSTR("models/") + widen(mi.dir);
+    path_t model_dir = models_dir + PATHSTR("/") + widen(mi.dir);
     const std::string& token = mi.denoise.at(denoise_level);
 
     if (mi.arch == "waifu2x")
@@ -382,8 +391,8 @@ static void resolve_model_files(const ModelInfo& mi, int scale, int denoise_leve
     }
     else
     {
-        parampath = sanitize_filepath(PATHSTR("models/") + widen(mi.dir + "/" + token + ".param"));
-        binpath = sanitize_filepath(PATHSTR("models/") + widen(mi.dir + "/" + token + ".bin"));
+        parampath = sanitize_filepath(models_dir + PATHSTR("/") + widen(mi.dir + "/" + token + ".param"));
+        binpath = sanitize_filepath(models_dir + PATHSTR("/") + widen(mi.dir + "/" + token + ".bin"));
     }
     prepadding = mi.prepad.count(scale) ? mi.prepad.at(scale) : 0;
 }
@@ -402,7 +411,7 @@ static path_t single_file_outpath(const std::filesystem::path& in, const std::ws
 // 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
 // 引擎类只需提供 process(in, out) const；模板避免多套重复代码
 template <typename Engine>
-static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
+static int run_files(Engine* engine, const std::wstring& models_dir, const ModelInfo& mi, int denoise_level,
                      const std::vector<path_t>& input_files,
                      const std::vector<path_t>& output_files, const path_t& format,
                      int quality, int run_scale, bool target_mode, int target_value,
@@ -579,7 +588,7 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
             // 尺寸模式按文件倍数重载模型（倍率模式 loaded_scale 恒定）
             if (file_scale != loaded_scale || (denoise_auto && file_denoise != denoise_level))
             {
-                resolve_model_files(mi, file_scale, file_denoise, cur_param, cur_bin, cur_prepad);
+                resolve_model_files(models_dir, mi, file_scale, file_denoise, cur_param, cur_bin, cur_prepad);
                 if (engine->load_files(cur_param, cur_bin) != 0)
                 {
                     fail(true, "model load failed", inpath);
@@ -736,6 +745,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
 {
     path_t inputpath;
     path_t model_id = PATHSTR("upconv7-anime");
+    path_t models_dir = PATHSTR("models");
     double scale_arg = 2.0;
     bool scale_given = false;
     bool width_given = false;
@@ -809,6 +819,10 @@ int PATH_MAIN(int argc, wchar_t** argv)
         else if (wcscmp(a, L"-g") == 0 && i + 1 < argc)
         {
             gpuid_arg = _wtoi(argv[++i]);
+        }
+        else if (wcscmp(a, L"--models-dir") == 0 && i + 1 < argc)
+        {
+            models_dir = argv[++i];
         }
         else if (wcscmp(a, L"-v") == 0)
         {
@@ -1102,21 +1116,21 @@ int PATH_MAIN(int argc, wchar_t** argv)
     if (mi->arch == "waifu2x")
     {
         Waifu2xEngine engine(gpuid, num_threads);
-        rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
+        rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, verbose);
     }
     else if (mi->arch == "cugan")
     {
         CuganEngine engine(gpuid, num_threads);
-        rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
+        rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, verbose);
     }
     else // rrdb | compact
     {
         RealesrganEngine engine(gpuid);
-        rc = run_files(&engine, *mi, denoise_level, input_files, output_files, format,
+        rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, verbose);
     }
