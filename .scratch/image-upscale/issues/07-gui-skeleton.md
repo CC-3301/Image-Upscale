@@ -28,4 +28,4 @@
   5. 开始处理 → 进度条按 progress d/t 前进 → 完成提示
   6. 产物命名与 CLI 完全一致（A-(模型名)-2.0x.jpg）
   7. 全程仅中文
-Status: ready-for-agent（实现完成，待人工过清单）
+Status: done（代码与构建完成；人工清单待用户过一遍）
