@@ -1,30 +1,36 @@
-# 打包 portable zip（工单 09）——零删除版本
-# 产物：dist/Image-Upscale-win64.zip（解压即用，GUI self-contained）
-# 说明：dist/ 目录已存在时由调用者自行清理（本脚本不做递归删除）
+﻿# 打包 portable zip（工单 09 / 工单 16）
+# 产物：dist/<Version>/Image-Upscale-win64.zip（解压即用，GUI self-contained 单文件）
+# 布局（工单 16）：根目录仅 GUI exe + engine/ + models/ + 许可文档；语言资源仅中文
+# 说明：不做任何删除操作——输出到版本化子目录，旧包由人工处置
+param(
+    [string]$Version = 'v0.2'
+)
 $ErrorActionPreference = 'Stop'
 
 $repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$dist = Join-Path $repo 'dist'
+$dist = Join-Path $repo "dist\$Version"
 $pkg = Join-Path $dist 'Image-Upscale'
 $dotnet = 'D:\Software\DotNet\dotnet.exe'
+
+if (Test-Path (Join-Path $dist 'Image-Upscale-win64.zip')) { throw "zip already exists: $dist\Image-Upscale-win64.zip（换一个 -Version）" }
 
 # 1) 引擎（Release，增量构建）
 & cmd /c "D:\tmp\image-upscale-setup\build.bat" | Out-Null
 if (-not (Test-Path (Join-Path $repo 'bld\image-upscale.exe'))) { throw 'engine build failed' }
 
-# 2) GUI self-contained 发布（直出目标目录）
-& $dotnet publish (Join-Path $repo 'gui\ImageUpscaleGui.csproj') -c Release -r win-x64 --self-contained true -o $pkg
+# 2) GUI self-contained 单文件发布（csproj 内含 PublishSingleFile / SatelliteResourceLanguages=zh-Hans）
+& $dotnet publish (Join-Path $repo 'gui\ImageUpscaleGui.csproj') -c Release -r win-x64 -o $pkg
 if ($LASTEXITCODE -ne 0) { throw 'gui publish failed' }
 
-# 3) 组装
-Copy-Item (Join-Path $repo 'bld\image-upscale.exe') $pkg -Force
+# 3) 组装：根目录仅 GUI exe + engine/ 子目录 + models/ + 许可文档
+New-Item -ItemType Directory -Force (Join-Path $pkg 'engine') | Out-Null
+Copy-Item (Join-Path $repo 'bld\image-upscale.exe') (Join-Path $pkg 'engine\image-upscale.exe') -Force
 Copy-Item (Join-Path $repo 'models') $pkg -Recurse -Force
 Copy-Item (Join-Path $repo 'LICENSE') $pkg -Force
 Copy-Item (Join-Path $repo 'NOTICE.md') $pkg -Force
 Copy-Item (Join-Path $repo 'README.md') $pkg -Force
 
-# 4) 压缩（同名 zip 已存在时要求调用者先清理，避免覆盖删除）
+# 4) 压缩
 $zip = Join-Path $dist 'Image-Upscale-win64.zip'
-if (Test-Path $zip) { throw "zip already exists: $zip（请手动清理后重试）" }
 Compress-Archive -Path $pkg -DestinationPath $zip
 Write-Output "packaged: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
