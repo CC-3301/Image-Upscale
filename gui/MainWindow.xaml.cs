@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Media;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -43,6 +44,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // 工单 31：标题带版本号（唯一来源 csproj <Version>，发版只改一处）
+        var ver = typeof(MainWindow).Assembly.GetName().Version;
+        Title = $"Image-Upscale 图像超分工具 v{ver?.ToString(3) ?? "?"}";
         Loaded += OnLoaded;
     }
 
@@ -73,6 +77,8 @@ public partial class MainWindow : Window
         var modelIdx = _models.FindIndex(m => m.Id == s.ModelId);
         ModelBox.SelectedIndex = modelIdx >= 0 ? modelIdx : 0;
         RestoreSettings(s);
+        // 工单 25：恢复窗口几何（尺寸 → 位置 → 最大化）
+        RestoreWindowBounds(s);
 
         Log($"引擎就绪：{_enginePath}");
         Log($"已加载 {_models.Count} 个模型");
@@ -103,6 +109,34 @@ public partial class MainWindow : Window
             QualitySlider.Value = s.OutputQuality;
         else
             OnQualitySliderChanged(null, null); // 确保输入框与滑条初始一致
+    }
+
+    // ---- 工单 25：恢复窗口几何（逐项校验，与 setting.ini 其余项同款静默回退语义）----
+    private void RestoreWindowBounds(SettingsStore s)
+    {
+        // 尺寸：低于最小尺寸的记录不采用
+        if (s.WindowWidth >= MinWidth && s.WindowHeight >= MinHeight)
+        {
+            Width = s.WindowWidth;
+            Height = s.WindowHeight;
+        }
+
+        // 位置：与虚拟屏幕有交集且未超出屏幕才采用（拔显示器/改分辨率防丢窗口），否则保持系统默认位
+        if (s.WindowLeft != int.MinValue && s.WindowTop != int.MinValue)
+        {
+            var vs = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                              SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+            var wr = new Rect(s.WindowLeft, s.WindowTop, Math.Max(Width, MinWidth), Math.Max(Height, MinHeight));
+            if (wr.Left >= vs.Left && wr.Top >= vs.Top && wr.Right <= vs.Right && wr.Bottom <= vs.Bottom)
+            {
+                Left = s.WindowLeft;
+                Top = s.WindowTop;
+            }
+        }
+
+        // 最大化：恢复尺寸/位置后再置状态（最大化时 Left/Top 不可信，还原态坐标已先行设置）
+        if (s.WindowMaximized == 1)
+            WindowState = WindowState.Maximized;
     }
 
     private static bool LocateEngine(out string enginePath, out string modelsDir)
@@ -372,7 +406,11 @@ public partial class MainWindow : Window
             _ => $"失败：引擎异常崩溃（退出码 {exitCode}）"
         };
         Log($"引擎退出码 {exitCode} —— {summary}");
-        MessageBox.Show(summary, exitCode == 0 ? "完成" : "出错");
+        // 工单 26：任务完成不弹窗，仅声音提示（成功 Asterisk / 失败 Exclamation）；汇总在日志区
+        if (exitCode == 0)
+            SystemSounds.Asterisk.Play();
+        else
+            SystemSounds.Exclamation.Play();
     }
 
     // 工单 17：日志为可复制、自动换行的只读文本
@@ -382,24 +420,35 @@ public partial class MainWindow : Window
         LogBox.ScrollToEnd();
     }
 
-    // ---- 工单 14：退出时保存设置 ----
+    // ---- 工单 14 + 25：退出时保存设置（含窗口几何）----
     private void OnClosing(object sender, CancelEventArgs e)
     {
-        if (_models.Count == 0 || ModelBox.SelectedIndex < 0)
-            return;
-        var m = _models[ModelBox.SelectedIndex];
+        // 从已存设置出发：引擎缺失等场景读不到模型项时，旧值不丢（逐项覆盖）
+        var s = SettingsStore.Load();
 
-        var s = new SettingsStore
+        if (_models.Count > 0 && ModelBox.SelectedIndex >= 0)
         {
-            ModelId = m.Id,
-            ScaleMode = ModeWidth.IsChecked == true ? "width" : ModeHeight.IsChecked == true ? "height" : "ratio",
+            var m = _models[ModelBox.SelectedIndex];
+            s.ModelId = m.Id;
+            s.ScaleMode = ModeWidth.IsChecked == true ? "width" : ModeHeight.IsChecked == true ? "height" : "ratio";
             // 仅写入合法值；非法值不写（恢复时按默认处理）
-            Scale = double.TryParse(ScaleBox.SelectedItem?.ToString()?.TrimEnd('x'), out var sc) ? (int)Math.Round(sc) : 0,
-            ScaleWidth = int.TryParse(WidthBox.Text, out var w) && w > 0 ? w : 0,
-            ScaleHeight = int.TryParse(HeightBox.Text, out var h) && h > 0 ? h : 0,
-            OutputExt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString()?.ToLower() ?? "jpg",
-            OutputQuality = (int)QualitySlider.Value,
-        };
+            s.Scale = double.TryParse(ScaleBox.SelectedItem?.ToString()?.TrimEnd('x'), out var sc) ? (int)Math.Round(sc) : 0;
+            s.ScaleWidth = int.TryParse(WidthBox.Text, out var w) && w > 0 ? w : 0;
+            s.ScaleHeight = int.TryParse(HeightBox.Text, out var h) && h > 0 ? h : 0;
+            s.OutputExt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString()?.ToLower() ?? "jpg";
+            s.OutputQuality = (int)QualitySlider.Value;
+        }
+
+        // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
+        var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
+            ? RestoreBounds
+            : new Rect(Left, Top, Width, Height);
+        s.WindowLeft = double.IsNaN(wb.Left) ? int.MinValue : (int)Math.Round(wb.Left);
+        s.WindowTop = double.IsNaN(wb.Top) ? int.MinValue : (int)Math.Round(wb.Top);
+        s.WindowWidth = (int)Math.Round(wb.Width);
+        s.WindowHeight = (int)Math.Round(wb.Height);
+        s.WindowMaximized = WindowState == WindowState.Maximized ? 1 : 0;
+
         SettingsStore.Save(s);
     }
 }
@@ -414,6 +463,12 @@ public class SettingsStore
     public int ScaleHeight;
     public string OutputExt = "jpg";
     public int OutputQuality = -1;     // -1 = 无记录
+    // 工单 25：窗口几何（MinValue/0 = 无记录）
+    public int WindowLeft = int.MinValue;
+    public int WindowTop = int.MinValue;
+    public int WindowWidth;
+    public int WindowHeight;
+    public int WindowMaximized;        // 1 = 上次关闭时最大化
 
     private static string SettingsPath => Path.Combine(AppContext.BaseDirectory, "setting.ini");
 
@@ -443,6 +498,13 @@ public class SettingsStore
             s.ScaleHeight = TryPositiveInt(map, "LastScaleHeight");
             s.OutputExt = map.TryGetValue("LastOutputExt", out v) && v is "jpg" or "png" or "webp" ? v : "jpg";
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
+
+            // 工单 25：窗口几何
+            s.WindowLeft = map.TryGetValue("LastWindowLeft", out v) && int.TryParse(v, out var nl) ? nl : int.MinValue;
+            s.WindowTop = map.TryGetValue("LastWindowTop", out v) && int.TryParse(v, out var nt) ? nt : int.MinValue;
+            s.WindowWidth = TryPositiveInt(map, "LastWindowWidth");
+            s.WindowHeight = TryPositiveInt(map, "LastWindowHeight");
+            s.WindowMaximized = map.TryGetValue("LastWindowMaximized", out v) && v == "1" ? 1 : 0;
         }
         catch
         {
@@ -466,6 +528,12 @@ public class SettingsStore
             sb.AppendLine($"LastScaleHeight={s.ScaleHeight}");
             sb.AppendLine($"LastOutputExt={s.OutputExt}");
             sb.AppendLine($"LastOutputQuality={s.OutputQuality}");
+            // 工单 25：窗口几何
+            sb.AppendLine($"LastWindowLeft={s.WindowLeft}");
+            sb.AppendLine($"LastWindowTop={s.WindowTop}");
+            sb.AppendLine($"LastWindowWidth={s.WindowWidth}");
+            sb.AppendLine($"LastWindowHeight={s.WindowHeight}");
+            sb.AppendLine($"LastWindowMaximized={s.WindowMaximized}");
             File.WriteAllText(SettingsPath, sb.ToString(), new UTF8Encoding(false));
         }
         catch

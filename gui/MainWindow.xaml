@@ -1,3 +1,4 @@
+<!-- 工单 31：Title 运行时以 csproj 版本号重设，此处为设计器回退值 -->
 <Window x:Class="ImageUpscaleGui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
