@@ -15,6 +15,7 @@
 - 引擎构建：`scripts\engine-build.bat`（标准 VS 安装零配置；便携/非标准 MSVC 设 `IU_VS_PATH`，勿手写编译命令）
 - 测试：先 `set IU_ENGINE=<仓库>\bld\image-upscale.exe`，再 `python -m pytest tests -q`（conftest 默认路径在本布局不存在；lessons §4）
 - 打包：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；非标准 dotnet 安装设 `IU_DOTNET`；重新发布用新版本号，不删旧包）
+- **发布前清理（固定流程）**：发出发布请求前，列清本次迭代产生的临时物（.tmp-publish、pytest 缓存、.scratch 已否决候选存档、无用脚本等），按全局删除安全规则经维护者确认后删除，再请求发布。dist 旧版本目录按零删除原则保留，不属清理对象。
 
 ## Agent skills
 
