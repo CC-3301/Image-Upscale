@@ -64,10 +64,14 @@ int webp_save(const char* filepath, int w, int h, int c, const unsigned char* pi
         // 有损编码，quality 0-100
         length = WebPEncodeRGB(pixeldata, w, h, w * 3, quality, &output);
     }
+    else if (c == 4)
+    {
+        // RGBA 有损编码（alpha 保留）
+        length = WebPEncodeRGBA(pixeldata, w, h, w * 4, quality, &output);
+    }
     else
     {
-        // 本引擎推理链路固定输出 3 通道（01 阶段 alpha 已拍平），4 通道不支持
-        return 0;
+        // unsupported channel type
     }
 
     if (length == 0)

@@ -277,12 +277,13 @@ static std::wstring widen(const std::string& s)
     return std::wstring(s.begin(), s.end());
 }
 
-// 高质量等比缩放（Catmull-Rom；输入输出均 3 通道 RGB）
-static bool resize_rgb(const ncnn::Mat& src, ncnn::Mat& dst, int out_w, int out_h)
+// 高质量等比缩放（Catmull-Rom；通道数 1/3/4）
+static bool resize_rgb(const ncnn::Mat& src, ncnn::Mat& dst, int out_w, int out_h, int channels)
 {
-    dst.create(out_w, out_h, 3);
-    return stbir_resize_uint8_linear((const unsigned char*)src.data, src.w, src.h, src.w * 3,
-        (unsigned char*)dst.data, out_w, out_h, out_w * 3, STBIR_RGB) != 0;
+    stbir_pixel_layout layout = (stbir_pixel_layout)channels;
+    dst.create(out_w, out_h, channels);
+    return stbir_resize_uint8_linear((const unsigned char*)src.data, src.w, src.h, src.w * channels,
+        (unsigned char*)dst.data, out_w, out_h, out_w * channels, layout) != 0;
 }
 
 // 目标尺寸模式的原生倍率选择：≥ 比例的最小档，不足取最大档
@@ -423,8 +424,28 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
             continue;
         }
 
-        // 工单 04 前：alpha 拍平白底，全链路 3 通道
-        if (c == 4)
+        // alpha 处理（工单 04）：PNG/WebP 输出保留并同步放大；JPG 输出与白底合成
+        bool has_alpha = false;
+        std::vector<unsigned char> alpha_src;
+        if (c == 4 && format != PATHSTR("jpg"))
+        {
+            has_alpha = true;
+            alpha_src.resize((size_t)w * h);
+            for (int i = 0; i < w * h; i++)
+                alpha_src[i] = pixeldata[(size_t)i * 4 + 3];
+            unsigned char* rgb = (unsigned char*)malloc((size_t)w * h * 3);
+            if (!rgb)
+            {
+                fail(false, "out of memory", inpath);
+                continue;
+            }
+            for (int i = 0; i < w * h; i++)
+                memcpy(rgb + (size_t)i * 3, pixeldata + (size_t)i * 4, 3);
+            free(pixeldata);
+            pixeldata = rgb;
+            c = 3;
+        }
+        else if (c == 4)
         {
             unsigned char* rgb = flatten_alpha_to_white(pixeldata, w, h);
             if (!rgb)
@@ -535,7 +556,7 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
                 {
                     outimage = native_out;
                 }
-                else if (!resize_rgb(native_out, outimage, exact_w, exact_h))
+                else if (!resize_rgb(native_out, outimage, exact_w, exact_h, 3))
                 {
                     fail(false, "resize failed", inpath);
                     continue;
@@ -557,7 +578,7 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
                 exact_w = std::max(1, (int)((double)w * target_value / h + 0.5));
             }
             ncnn::Mat inimage(w, h, (void*)pixeldata, (size_t)3, 3);
-            if (!resize_rgb(inimage, outimage, exact_w, exact_h))
+            if (!resize_rgb(inimage, outimage, exact_w, exact_h, 3))
             {
                 fail(false, "resize failed", inpath);
                 free(pixeldata);
@@ -566,12 +587,34 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
             free(pixeldata);
         }
 
+        // alpha 合成（RGB 超分结果 + 同步放大的 alpha → RGBA）
+        if (has_alpha)
+        {
+            ncnn::Mat alpha_in(w, h, (void*)alpha_src.data(), (size_t)1, 1);
+            ncnn::Mat alpha_out;
+            if (!resize_rgb(alpha_in, alpha_out, outimage.w, outimage.h, 1))
+            {
+                fail(false, "resize failed", inpath);
+                continue;
+            }
+            std::vector<unsigned char> merged((size_t)outimage.w * outimage.h * 4);
+            const unsigned char* rgbp = (const unsigned char*)outimage.data;
+            for (int i = 0; i < outimage.w * outimage.h; i++)
+            {
+                merged[(size_t)i * 4] = rgbp[(size_t)i * 3];
+                merged[(size_t)i * 4 + 1] = rgbp[(size_t)i * 3 + 1];
+                merged[(size_t)i * 4 + 2] = rgbp[(size_t)i * 3 + 2];
+                merged[(size_t)i * 4 + 3] = ((const unsigned char*)alpha_out.data)[i];
+            }
+            outimage = ncnn::Mat(outimage.w, outimage.h, (void*)merged.data(), (size_t)4, 4);
+        }
+
         // 编码（按输出格式；质量参数作用于 jpg/webp）
         bool save_ok = false;
         if (format == PATHSTR("jpg"))
         {
             MemBuffer buf;
-            if (stbi_write_jpg_to_func(stb_write_callback, &buf, outimage.w, outimage.h, 3, outimage.data, quality))
+            if (stbi_write_jpg_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, quality))
             {
                 save_ok = write_file_wide(outpath, buf.data.data(), buf.data.size());
             }
@@ -579,14 +622,14 @@ static int run_files(Engine* engine, const ModelInfo& mi, int denoise_level,
         else if (format == PATHSTR("png"))
         {
             MemBuffer buf;
-            if (stbi_write_png_to_func(stb_write_callback, &buf, outimage.w, outimage.h, 3, outimage.data, outimage.w * 3))
+            if (stbi_write_png_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, outimage.w * outimage.elempack))
             {
                 save_ok = write_file_wide(outpath, buf.data.data(), buf.data.size());
             }
         }
         else // webp
         {
-            save_ok = webp_save(outpath.c_str(), outimage.w, outimage.h, 3, (const unsigned char*)outimage.data, (float)quality) == 1;
+            save_ok = webp_save(outpath.c_str(), outimage.w, outimage.h, outimage.elempack, (const unsigned char*)outimage.data, (float)quality) == 1;
         }
 
         if (!save_ok)
