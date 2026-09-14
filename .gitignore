@@ -30,3 +30,6 @@ gui/obj/
 
 # 打包产物
 dist/
+
+# 本地发布干跑临时目录
+.tmp-publish/
