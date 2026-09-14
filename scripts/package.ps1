@@ -1,9 +1,9 @@
-﻿# 打包 portable zip（工单 09 / 工单 16）
-# 产物：dist/<Version>/Image-Upscale-win64.zip（解压即用，GUI self-contained 单文件）
-# 布局（工单 16）：根目录仅 GUI exe + engine/ + models/ + 许可文档；语言资源仅中文
+﻿# 打包 portable zip（工单 09 / 16 / 27）
+# 产物：dist/<Version>/Image-Upscale-win64.zip（解压即用，单 ImageUpscale.exe，引擎已融合）
+# 布局（工单 27）：根目录仅 ImageUpscale.exe + models/ + 许可文档；引擎以 iu_engine.dll 收编进单文件
 # 说明：不做任何删除操作——输出到版本化子目录，旧包由人工处置
 param(
-    [string]$Version = 'v0.2'
+    [string]$Version = 'v0.2.2'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -30,20 +30,26 @@ $dotnet = Find-DotNet
 if (Test-Path (Join-Path $dist 'Image-Upscale-win64.zip')) { throw "zip already exists: $dist\Image-Upscale-win64.zip（换一个 -Version）" }
 
 # 1) 引擎（Release，增量构建；构建入口已收编进 scripts/engine-build.bat）
+# 产出 bld\iu_engine.dll（随发布收编）与 bld\image-upscale.exe（测试缝薄壳，不分发）
 & cmd /c (Join-Path $repo 'scripts\engine-build.bat') | Out-Null
-if (-not (Test-Path (Join-Path $repo 'bld\image-upscale.exe'))) { throw 'engine build failed' }
+if (-not (Test-Path (Join-Path $repo 'bld\iu_engine.dll'))) { throw 'engine build failed' }
 
-# 2) GUI self-contained 单文件发布（csproj 内含 PublishSingleFile / SatelliteResourceLanguages=zh-Hans）
-& $dotnet publish (Join-Path $repo 'gui\ImageUpscaleGui.csproj') -c Release -r win-x64 -o $pkg
+# 2) GUI self-contained 单文件发布（引擎 DLL 经 -p:EngineDll 收编进单文件）
+& $dotnet publish (Join-Path $repo 'gui\ImageUpscaleGui.csproj') -c Release -r win-x64 -o $pkg -p:EngineDll="$repo\bld\iu_engine.dll"
 if ($LASTEXITCODE -ne 0) { throw 'gui publish failed' }
 
-# 3) 组装：根目录仅 GUI exe + engine/ 子目录 + models/ + 许可文档
-New-Item -ItemType Directory -Force (Join-Path $pkg 'engine') | Out-Null
-Copy-Item (Join-Path $repo 'bld\image-upscale.exe') (Join-Path $pkg 'engine\image-upscale.exe') -Force
-Copy-Item (Join-Path $repo 'models') $pkg -Recurse -Force
+# 3) 组装 + 守卫（工单 27）：包根仅 ImageUpscale.exe + models/ + 许可文档
+New-Item -ItemType Directory -Force (Join-Path $pkg 'models') | Out-Null
+Copy-Item (Join-Path $repo 'models\*') (Join-Path $pkg 'models') -Recurse -Force
 Copy-Item (Join-Path $repo 'LICENSE') $pkg -Force
 Copy-Item (Join-Path $repo 'NOTICE.md') $pkg -Force
 Copy-Item (Join-Path $repo 'README.md') $pkg -Force
+
+if (Test-Path (Join-Path $pkg 'iu_engine.dll')) { throw 'iu_engine.dll 未被收编进单文件（包根出现散装 dll，分发形态被破坏）' }
+$pdbs = Get-ChildItem $pkg -Filter *.pdb -Recurse
+if ($pdbs) { throw "包内出现 pdb：$($pdbs.Name -join ', ')" }
+$exes = Get-ChildItem $pkg -Filter *.exe -Recurse
+if ($exes.Count -ne 1 -or $exes[0].Name -ne 'ImageUpscale.exe') { throw "包根应仅有一个 ImageUpscale.exe，实际：$($exes.Name -join ', ')" }
 
 # 4) 压缩
 $zip = Join-Path $dist 'Image-Upscale-win64.zip'

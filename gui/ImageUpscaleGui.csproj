@@ -6,7 +6,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>disable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>ImageUpscaleGui</AssemblyName>
+    <AssemblyName>ImageUpscale</AssemblyName>
     <RootNamespace>ImageUpscaleGui</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- 工单 31：版本号唯一来源；GUI 标题运行时读取 -->
@@ -18,5 +18,13 @@
     <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <!-- 工单 27：引擎 DLL 随构建/发布携带；EngineDll 可被打包脚本覆盖（-p:EngineDll=...） -->
+  <PropertyGroup>
+    <EngineDll Condition="'$(EngineDll)' == ''">$(MSBuildThisFileDirectory)..\bld\iu_engine.dll</EngineDll>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(EngineDll)')">
+    <Content Include="$(EngineDll)" Link="iu_engine.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
 
 </Project>

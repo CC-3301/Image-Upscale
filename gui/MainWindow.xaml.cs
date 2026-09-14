@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Media;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,7 +30,6 @@ public class ModelEntry
 
 public partial class MainWindow : Window
 {
-    private string _enginePath;
     private string _modelsDir;
     private List<ModelEntry> _models = new();
     private Process _running;
@@ -52,9 +52,10 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (!LocateEngine(out _enginePath, out _modelsDir))
+        // 工单 27：引擎为进程内 iu_engine.dll；models 目录由 GUI 定位（单一定义来源），显式传参
+        if (!LocateModels(out _modelsDir))
         {
-            Log("错误：未找到引擎 image-upscale.exe 或 models 目录（请确认目录布局）");
+            Log("错误：未找到 models 目录（应与 ImageUpscale.exe 同目录，开发布局在仓库根）");
             StartButton.IsEnabled = false;
             return;
         }
@@ -80,7 +81,7 @@ public partial class MainWindow : Window
         // 工单 25：恢复窗口几何（尺寸 → 位置 → 最大化）
         RestoreWindowBounds(s);
 
-        Log($"引擎就绪：{_enginePath}");
+        Log($"引擎就绪：iu_engine.dll（进程内调用），models：{_modelsDir}");
         Log($"已加载 {_models.Count} 个模型");
     }
 
@@ -139,39 +140,20 @@ public partial class MainWindow : Window
             WindowState = WindowState.Maximized;
     }
 
-    private static bool LocateEngine(out string enginePath, out string modelsDir)
+    // 工单 27：models 目录由 GUI 定位（单一定义来源，lessons §1.4），随后显式传 --models-dir 给引擎
+    // dist 布局：models 与 ImageUpscale.exe 同目录；开发布局：从 bin 输出向上回溯至仓库根
+    private static bool LocateModels(out string modelsDir)
     {
-        var exeDir = AppContext.BaseDirectory;
-        // 工单 16：分发布局引擎在 engine/ 子目录；开发布局仍从 bld 查找
-        foreach (var cand in new[]
-                 {
-                     exeDir,
-                     Path.Combine(exeDir, "engine"),
-                     Path.Combine(exeDir, "..", "bld"),
-                     Path.Combine(exeDir, "..", "engine"),
-                     Path.Combine(exeDir, "..", "..", "bld"),
-                     Path.Combine(exeDir, "..", "..", "engine"),
-                     Path.Combine(exeDir, "..", "..", "..", "bld"),
-                     Path.Combine(exeDir, "..", "..", "..", "engine"),
-                     Path.Combine(exeDir, "..", "..", "..", "..", "bld"),
-                     Path.Combine(exeDir, "..", "..", "..", "..", "engine"),
-                 })
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 8 && dir != null; i++, dir = dir.Parent)
         {
-            var full = Path.GetFullPath(cand);
-            var exe = Path.Combine(full, "image-upscale.exe");
-            if (File.Exists(exe))
+            var cand = Path.Combine(dir.FullName, "models");
+            if (File.Exists(Path.Combine(cand, "manifest.conf")))
             {
-                enginePath = exe;
-                // 模型目录：优先引擎同级的 models，其次仓库根（开发布局）
-                var m1 = Path.Combine(full, "models");
-                if (Directory.Exists(m1)) { modelsDir = m1; return true; }
-                var m2 = Path.GetFullPath(Path.Combine(full, "..", "models"));
-                if (Directory.Exists(m2)) { modelsDir = m2; return true; }
-                modelsDir = m1;
+                modelsDir = cand;
                 return true;
             }
         }
-        enginePath = null;
         modelsDir = null;
         return false;
     }
@@ -288,37 +270,44 @@ public partial class MainWindow : Window
         }
 
         var m = _models[ModelBox.SelectedIndex];
-        var args = new StringBuilder();
-        args.Append("-i \"").Append(input).Append("\"");
-        args.Append(" -m ").Append(m.Id);
+        // 工单 27：参数走数组（P/Invoke wchar_t**），无需引号转义；--models-dir 由 GUI 显式传入
+        var args = new List<string> { "-i", input, "-m", m.Id, "--models-dir", _modelsDir };
 
         if (ModeScale.IsChecked == true)
         {
             if (ScaleBox.SelectedItem == null) { MessageBox.Show("请选择倍率", "提示"); return; }
-            args.Append(" -s ").Append(ScaleBox.SelectedItem);
+            args.Add("-s");
+            args.Add(ScaleBox.SelectedItem.ToString());
         }
         else if (ModeWidth.IsChecked == true)
         {
             if (!int.TryParse(WidthBox.Text, out var w) || w <= 0) { MessageBox.Show("请输入有效的目标宽度", "提示"); return; }
-            args.Append(" --width ").Append(w);
+            args.Add("--width");
+            args.Add(w.ToString());
         }
         else
         {
             if (!int.TryParse(HeightBox.Text, out var h) || h <= 0) { MessageBox.Show("请输入有效的目标高度", "提示"); return; }
-            args.Append(" --height ").Append(h);
+            args.Add("--height");
+            args.Add(h.ToString());
         }
 
-        // 降噪：自动 → --denoise auto；无 → none；低/中/高 → low/mid/high（工单 22/23/24）
+        // 降噪：自动 → auto；无 → none；低/中/高 → low/mid/high（工单 22/23/24）
         var dSel = DenoiseBox.SelectedIndex;
-        if (dSel == 0) args.Append(" --denoise auto");
-        else if (dSel == 1) args.Append(" --denoise none");
-        else args.Append(" --denoise ").Append(dSel == 2 ? "low" : dSel == 3 ? "mid" : "high");
+        args.Add("--denoise");
+        if (dSel == 0) args.Add("auto");
+        else if (dSel == 1) args.Add("none");
+        else args.Add(dSel == 2 ? "low" : dSel == 3 ? "mid" : "high");
 
         var fmt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString();
-        args.Append(" -f ").Append(fmt.ToLower());
+        args.Add("-f");
+        args.Add(fmt.ToLower());
         if (fmt != "PNG")
-            args.Append(" -q ").Append((int)QualitySlider.Value);
-        args.Append(" -v"); // 逐文件明细（stderr）
+        {
+            args.Add("-q");
+            args.Add(((int)QualitySlider.Value).ToString());
+        }
+        args.Add("-v"); // 逐文件明细（stderr）
 
         Log($"开始：{Path.GetFileName(input)}（{m.Display}）");
 
@@ -330,7 +319,7 @@ public partial class MainWindow : Window
         _etaLastDone = 0;
 
         var exitCode = await Task.Run(() => EngineClient.Run(
-            _enginePath, Path.GetDirectoryName(_enginePath), args.ToString(),
+            args.ToArray(),
             line =>
             {
                 Dispatcher.Invoke(() =>
@@ -543,6 +532,19 @@ public class SettingsStore
     }
 }
 
+// ---- 工单 27：iu_engine.dll 导入面（C API 见 engine/src/engine_api.h）----
+// 单文件发布时该 DLL 由打包器收编，启动时自动解压至 %TEMP%\.net 后加载
+internal static class EngineApi
+{
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    public delegate void LineCb(IntPtr lineUtf8, IntPtr user);
+
+    [DllImport("iu_engine", CallingConvention = CallingConvention.Cdecl)]
+    public static extern int iu_run(int argc,
+        [MarshalAs(UnmanagedType.LPArray, ArraySubType = UnmanagedType.LPWStr)] string[] argv,
+        LineCb outCb, LineCb errCb, IntPtr user);
+}
+
 public static class EngineClient
 {
     public static List<ModelEntry> ParseManifest(string path)
@@ -601,31 +603,41 @@ public static class EngineClient
         return list;
     }
 
-    public static int Run(string enginePath, string workDir, string args,
-                          Action<string> onStdoutLine, Action<string> onStderrLine)
+    // ---- 工单 27：引擎 P/Invoke（进程内调用），行协议与进程版字节一致 ----
+    public static int Run(string[] args, Action<string> onStdoutLine, Action<string> onStderrLine)
     {
-        var psi = new ProcessStartInfo
+        // 引擎回调行为 UTF-8 且带结尾换行；去尾后空行不透传。回调委托在同步调用期内由托管栈根持有，无 GC 风险
+        var outCb = new EngineApi.LineCb((IntPtr p, IntPtr _) =>
         {
-            FileName = enginePath,
-            Arguments = args,
-            WorkingDirectory = workDir,
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
+            var s = CleanLine(p);
+            if (s.Length > 0) onStdoutLine(s);
+        });
+        var errCb = new EngineApi.LineCb((IntPtr p, IntPtr _) =>
+        {
+            var s = CleanLine(p);
+            if (s.Length > 0) onStderrLine(s);
+        });
 
-        using var process = new Process { StartInfo = psi };
-        process.OutputDataReceived += (_, e) => { if (e.Data != null) onStdoutLine(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data != null) onStderrLine(e.Data); };
+        var argv = new string[args.Length + 1];
+        argv[0] = "ImageUpscale"; // 占位，引擎解析从 argv[1] 开始
+        Array.Copy(args, 0, argv, 1, args.Length);
 
-        process.Start();
-        process.BeginOutputReadLine();
-        process.BeginErrorReadLine();
-        process.WaitForExit();
-
-        return process.ExitCode;
+        try
+        {
+            return EngineApi.iu_run(argv.Length, argv, outCb, errCb, IntPtr.Zero);
+        }
+        catch (DllNotFoundException)
+        {
+            onStderrLine("错误：未找到 iu_engine.dll（应与 ImageUpscale.exe 同目录分发）");
+            return -1;
+        }
+        catch (EntryPointNotFoundException)
+        {
+            onStderrLine("错误：iu_engine.dll 版本不匹配（缺少 iu_run 导出）");
+            return -1;
+        }
     }
+
+    private static string CleanLine(IntPtr p)
+        => System.Runtime.InteropServices.Marshal.PtrToStringUTF8(p)?.TrimEnd('\r', '\n') ?? "";
 }

@@ -216,17 +216,33 @@ image_upscale_add_shader(engine/src/realesrgan_postproc.comp)
 image_upscale_add_shader(engine/src/realesrgan_preproc_tta.comp)
 image_upscale_add_shader(engine/src/realesrgan_postproc_tta.comp)
 
-add_executable(image-upscale
-    engine/src/main.cpp
+# ---- 引擎核心（DLL，工单 27）：GUI 进程内 P/Invoke 调用；随发布分发 ----
+add_library(iu_engine SHARED
+    engine/src/engine_core.cpp
     engine/src/waifu2x.cpp
     engine/src/realcugan.cpp
     engine/src/realesrgan.cpp
     ${SHADER_SPV_HEX_FILES}
 )
 
-target_include_directories(image-upscale PRIVATE
+target_compile_definitions(iu_engine PRIVATE IU_ENGINE_BUILDING)
+
+target_include_directories(iu_engine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/src
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/third_party/libwebp/src
+)
+
+target_compile_options(iu_engine PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+)
+
+# ---- 测试缝 CLI 薄壳（工单 27）：仅自动化测试用，不随发布分发 ----
+add_executable(image-upscale
+    engine/src/main.cpp
+)
+
+target_include_directories(image-upscale PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/engine/src
 )
 
 target_compile_options(image-upscale PRIVATE
@@ -239,9 +255,13 @@ if(IU_ENABLE_ASAN)
     add_link_options(/fsanitize=address)
 endif()
 
-target_link_libraries(image-upscale PRIVATE
+target_link_libraries(iu_engine PRIVATE
     ncnn
     webp
     sharpyuv
     Threads::Threads
+)
+
+target_link_libraries(image-upscale PRIVATE
+    iu_engine
 )

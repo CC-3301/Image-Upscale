@@ -1,4 +1,4 @@
-# 下载/生成全部打包模型（幂等：已存在则跳过）
+﻿# 下载/生成全部打包模型（幂等：已存在则跳过）
 # 来源：
 #   waifu2x 三模型  — nihui/waifu2x-ncnn-vulkan release（MIT）
 #   realcugan pro/se — nihui/realcugan-ncnn-vulkan release（MIT）

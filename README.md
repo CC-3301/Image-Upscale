@@ -1,12 +1,12 @@
 # Image-Upscale
 
-本地图像超分辨率工具（GUI + CLI 同核），waifu2x-caffe 的现代继任者：推理基于 ncnn + Vulkan，Nvidia/AMD/Intel 显卡通用并有 CPU 兜底。**本项目全程由 AI 开发。**
+本地图像超分辨率工具，waifu2x-caffe 的现代继任者：推理基于 ncnn + Vulkan，Nvidia/AMD/Intel 显卡通用并有 CPU 兜底。**本项目全程由 AI 开发。**
 
 术语表见 [CONTEXT.md](./CONTEXT.md)；关键决策见 [docs/adr/](./docs/adr/)；踩坑清单见 [docs/lessons.md](./docs/lessons.md)；规格与工单见 [.scratch/image-upscale/](./.scratch/image-upscale/)。
 
 ## 当前状态
 
-**v0.2.1 已发布**：从 [Releases](https://github.com/CC-3301/Image-Upscale/releases/latest) 下载 zip 解压即用（根目录仅 GUI exe + engine/ + models/）。
+**v0.2.2 已发布**：从 [Releases](https://github.com/CC-3301/Image-Upscale/releases/latest) 下载 zip 解压即用（根目录仅 `ImageUpscale.exe` + `models/` + 许可文档，引擎已融合进单文件）。
 
 后续迭代工单见 [.scratch/image-upscale/issues/](./.scratch/image-upscale/issues/)；全部工单状态以文件内 `Status:` 行为准。
 
@@ -17,14 +17,15 @@
 ```powershell
 git submodule update --init --recursive
 
-# 引擎（ncnn + Vulkan + CPU）
-scripts\engine-build.bat          # 产物：bld\image-upscale.exe
+# 引擎（ncnn + Vulkan + CPU）→ bld\iu_engine.dll
+# （另有测试缝薄壳 bld\image-upscale.exe，仅自动化测试用，不随发布分发）
+scripts\engine-build.bat
 
-# GUI（WPF，.NET 8）
+# GUI（WPF，.NET 8）→ ImageUpscale.exe
 dotnet build gui\ImageUpscaleGui.csproj -c Release
 
-# 一键打包 portable zip（含引擎/GUI/模型，输出 dist\vX.Y.Z\）
-powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version v0.2.1
+# 一键打包 portable zip（引擎融合进单文件，输出 dist\vX.Y.Z\）
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version v0.2.2
 ```
 
 ## 模型获取
@@ -33,17 +34,15 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version v0.2.1
 powershell -ExecutionPolicy Bypass -File scripts/fetch-models.ps1
 ```
 
-## 引擎 CLI
+## 使用
 
-```text
-image-upscale -i input-path [-m model-name] [-s 2.0] [-f jpg|png|webp] [-q 0-100] [-t tile] [-g gpu-id] [-v]
-```
+解压后运行 `ImageUpscale.exe`：
 
-- 输入为单文件：输出 `A-(模型名)-2.0x.后缀`（同目录）
-- 输入为文件夹：输出同级文件夹 `A-(模型名)-2.0x/`（文件名保留）
-- 默认 JPG 质量 90；输出格式不跟随输入格式
-- 退出码：0 成功 / 1 参数错误 / 2 模型或推理失败 / 3 IO 错误
-- 进度：stdout 行式 `progress <done>/<total>`，结束输出 `done`
+- 输入支持拖入或浏览文件/文件夹（文件夹为递归批处理，仅顶层重命名，内部结构原样镜像）
+- 输出与输入同目录：`A-(模型名)-[nN-]<倍率|尺寸>.后缀`；指定尺寸小于原图时直通缩放（模型位写 `Resize`）
+- 降噪档位 自动/无/低/中/高，随模型能力自动启用或灰置；"自动"由伪影启发式估计
+- 输出格式 JPG（默认质量 90）/ PNG / WebP，质量 0-100 可调；输出格式不跟随输入格式
+- 退出码语义由引擎内部保留（0 成功 / 1 参数错误 / 2 推理失败 / 3 IO 错误），GUI 据此提示
 
 ## 许可
 

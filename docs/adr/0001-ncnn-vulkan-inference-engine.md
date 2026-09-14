@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted（交付形态部分被 0002 取代：独立 exe → iu_engine.dll 进程内融合；ncnn+Vulkan 选型仍有效）
 ---
 
 # 0001 - 推理引擎采用 ncnn + Vulkan，引擎独立成 exe
