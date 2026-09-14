@@ -61,3 +61,9 @@ zip 解压后结构臃肿：只需要中文，却包含 cs、de、es、fr、it�
 - dist/v0.2：根目录 0 散落 DLL、0 非中文语言目录；GUI 单文件 139MB；引擎在 engine/
 - 包内引擎彩色冒烟 ✅；GUI 启动 6s 存活 ✅
 - 人工：解压到新目录拖图全链路
+
+### 缺陷修复（2026-09-14 人工验收发现）
+
+- 新布局下 GUI 以 engine/ 为引擎工作目录启动，而引擎按 CWD 找 manifest → "cannot read models/manifest.conf"（打包冒烟从包根跑恰好未复刻 GUI 场景）
+- 修复：models 定位顺序 = 显式 --models-dir > CWD/models > 引擎目录/models > 引擎上级/models；manifest 跟随同一 models_dir；parse_manifest 改 _wfopen（宽字符，兼容中文安装路径）
+- 回归测试 2 个（dist 布局模拟 + 显式 --models-dir 优先）；包 v0.2.1 已含修复，CWD=engine/ 冒烟 ✅

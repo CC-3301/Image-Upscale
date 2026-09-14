@@ -81,9 +81,9 @@ struct ModelInfo
     std::map<int, std::string> denoise; // 0=无 1=低 2=中 3=高 → 变体 token
 };
 
-static bool parse_manifest(const std::string& path, std::vector<ModelInfo>& out)
+static bool parse_manifest(const path_t& path, std::vector<ModelInfo>& out)
 {
-    FILE* fp = fopen(path.c_str(), "rb");
+    FILE* fp = _wfopen(path.c_str(), L"rb");
     if (!fp)
         return false;
 
@@ -758,6 +758,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
     path_t inputpath;
     path_t model_id = PATHSTR("upconv7-anime");
     path_t models_dir = PATHSTR("models");
+    bool models_dir_given = false;
     double scale_arg = 2.0;
     bool scale_given = false;
     bool width_given = false;
@@ -838,6 +839,7 @@ int PATH_MAIN(int argc, wchar_t** argv)
         else if (wcscmp(a, L"--models-dir") == 0 && i + 1 < argc)
         {
             models_dir = argv[++i];
+            models_dir_given = true;
         }
         else if (wcscmp(a, L"-v") == 0)
         {
@@ -899,10 +901,29 @@ int PATH_MAIN(int argc, wchar_t** argv)
     }
 
     // ---- 模型清单 ----
-    std::vector<ModelInfo> models;
-    if (!parse_manifest("models/manifest.conf", models) || models.empty())
+    // 工单 16：models 定位顺序 —— 显式 --models-dir > CWD/models > 引擎目录/models > 引擎上级/models
+    // （GUI 以引擎所在目录为工作目录启动，dist 布局 models 在引擎上一级；CLI 也不再要求必须从 app 目录运行）
+    if (!models_dir_given)
     {
-        fprintf(stderr, "cannot read models/manifest.conf (run from the app directory?)\n");
+        wchar_t exe_buf[MAX_PATH];
+        GetModuleFileNameW(NULL, exe_buf, MAX_PATH);
+        const std::filesystem::path exe_dir = std::filesystem::path(exe_buf).parent_path();
+        for (const std::wstring& cand : { std::wstring(L"models"),
+                                          (exe_dir / L"models").wstring(),
+                                          (exe_dir / L".." / L"models").wstring() })
+        {
+            std::error_code ec;
+            if (std::filesystem::exists(cand + PATHSTR("/manifest.conf"), ec))
+            {
+                models_dir = cand;
+                break;
+            }
+        }
+    }
+    std::vector<ModelInfo> models;
+    if (!parse_manifest(models_dir + PATHSTR("/manifest.conf"), models) || models.empty())
+    {
+        fprintf(stderr, "cannot read models/manifest.conf (searched CWD/models, engine-dir/models, engine-dir/../models)\n");
         return EXIT_PARAM;
     }
 

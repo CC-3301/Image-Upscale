@@ -74,3 +74,48 @@ def test_denoise_naming_none_has_no_segment(workdir):
     assert p.returncode == 0
     assert (workdir / "in-(cunet)-2.0x.png").exists()
     assert not (workdir / "in-(cunet)-n0-2.0x.png").exists()
+
+
+# ---- 工单 16 缺陷修复：models/manifest.conf 按引擎自身位置解析，不再强依赖 CWD ----
+
+@needs_engine
+def test_models_resolved_relative_to_engine_exe(tmp_path, workdir):
+    """模拟 dist 布局：engine/ 子目录放引擎、models/ 在上级；从 tmp_path（引擎目录的上级）运行。
+    旧引擎按 CWD 找清单会报 cannot read models/manifest.conf。"""
+    import shutil
+    import subprocess
+    from conftest import ENGINE, REPO
+
+    engine_dir = tmp_path / "engine"
+    engine_dir.mkdir()
+    engine_copy = engine_dir / "image-upscale.exe"
+    shutil.copy2(ENGINE, engine_copy)
+    (tmp_path / "models").mkdir()
+    shutil.copy(REPO / "models" / "manifest.conf", tmp_path / "models" / "manifest.conf")
+
+    # GUI 以 engine/ 子目录作为引擎工作目录（MainWindow 传 WorkingDirectory=引擎所在目录），
+    # 输入不存在时若清单解析成功会推进到输入校验（"input file not readable"）；
+    # 若清单仍按 CWD 解析失败，则是 "cannot read models/manifest.conf"
+    p = subprocess.run(
+        [str(engine_copy), "-i", str(workdir / "no-such.png"), "-m", "upconv7-anime", "-g", "-1"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=engine_dir)
+    assert "cannot read models/manifest.conf" not in p.stderr, p.stderr
+
+
+@needs_engine
+def test_explicit_models_dir_wins(tmp_path, workdir):
+    """显式 --models-dir 指向他处时不做 fallback 探测，且清单也跟随该目录。"""
+    import shutil
+    import subprocess
+    from conftest import ENGINE, REPO
+
+    alt = tmp_path / "alt-models"
+    alt.mkdir()
+    shutil.copy(REPO / "models" / "manifest.conf", alt / "manifest.conf")
+
+    # CWD=repo 根（models/ 可用）但显式指定 alt：清单应从 alt 读（同样推进到输入校验）
+    p = subprocess.run(
+        [str(ENGINE), "-i", str(workdir / "no-such.png"), "-m", "upconv7-anime",
+         "--models-dir", str(alt), "-g", "-1"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO)
+    assert "cannot read models/manifest.conf" not in p.stderr, p.stderr
