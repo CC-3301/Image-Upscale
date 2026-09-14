@@ -890,21 +890,25 @@ int PATH_MAIN(int argc, wchar_t** argv)
             return EXIT_IO;
         }
 
-        std::vector<path_t> filenames;
-        if (list_directory(inputpath, filenames) != 0)
+        // 递归收集（工单 05）：仅顶层文件夹重命名，内部目录结构与文件名原样镜像
+        std::vector<std::pair<std::filesystem::path, std::filesystem::path>> found; // (full, rel)
+        for (auto& entry : std::filesystem::recursive_directory_iterator(inputpath))
         {
-            fprintf(stderr, "cannot list directory: %ls\n", inputpath.c_str());
-            return EXIT_IO;
+            if (!entry.is_regular_file())
+                continue;
+            if (!ext_is_image(get_file_extension(entry.path().filename().wstring())))
+                continue;
+            found.push_back({entry.path(), std::filesystem::relative(entry.path(), inputpath)});
         }
 
-        for (const path_t& filename : filenames)
+        for (auto& pair : found)
         {
-            path_t fullpath = inputpath + PATHSTR('/') + filename;
-            if (!ext_is_image(get_file_extension(filename)))
-                continue;
-            input_files.push_back(fullpath);
-            path_t stem = get_file_name_without_extension(filename);
-            output_files.push_back(output_dir + PATHSTR('/') + stem + PATHSTR('.') + wext);
+            const std::filesystem::path& full_fs = pair.first;
+            const std::filesystem::path& rel_path = pair.second;
+            input_files.push_back(full_fs.wstring());
+            std::filesystem::create_directories(out_dir_path / rel_path.parent_path(), ec);
+            path_t stem = get_file_name_without_extension(rel_path.filename().wstring());
+            output_files.push_back((out_dir_path / rel_path.parent_path() / (stem + L'.' + wext)).wstring());
         }
 
         if (input_files.empty())
