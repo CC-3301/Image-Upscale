@@ -9,6 +9,10 @@
     <AssemblyName>ImageUpscaleGui</AssemblyName>
     <RootNamespace>ImageUpscaleGui</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- 工单 16：便携 zip 瘦身 —— 仅中文卫星资源，运行时收敛进单文件 exe -->
+    <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
+    <PublishSingleFile Condition="'$(RuntimeIdentifier)' != ''">true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
 </Project>
