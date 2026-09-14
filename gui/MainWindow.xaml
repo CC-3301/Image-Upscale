@@ -16,7 +16,6 @@
         </Style>
         <Style TargetType="Button">
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="BorderThickness" Value="0.5"/>
         </Style>
     </Window.Resources>
     <Grid Margin="14">
