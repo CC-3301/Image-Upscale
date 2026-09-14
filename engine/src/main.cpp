@@ -345,11 +345,11 @@ static std::wstring widen(const std::string& s)
     return std::wstring(s.begin(), s.end());
 }
 
-// 高质量等比缩放（Catmull-Rom；通道数 1/3/4）
+// 高质量等比缩放（Catmull-Rom；通道数 1/3/4；输出为 uchar 交错布局）
 static bool resize_rgb(const ncnn::Mat& src, ncnn::Mat& dst, int out_w, int out_h, int channels)
 {
     stbir_pixel_layout layout = (stbir_pixel_layout)channels;
-    dst.create(out_w, out_h, channels);
+    dst.create(out_w, out_h, (size_t)channels, channels); // 与引擎 outimage 约定一致（编码器以 elempack 为通道数）
     return stbir_resize_uint8_linear((const unsigned char*)src.data, src.w, src.h, src.w * channels,
         (unsigned char*)dst.data, out_w, out_h, out_w * channels, layout) != 0;
 }

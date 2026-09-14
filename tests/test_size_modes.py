@@ -99,3 +99,64 @@ def test_target_mode_gpu_smoke(workdir):
     p = run_engine(["-i", inp, "--width", "192", "-f", "png"])
     assert p.returncode == 0, p.stderr
     assert Image.open(workdir / "in-(upconv7-anime)-192x.png").size == (192, 128)
+
+
+# ---- 工单 10：颜色通道回归（旧引擎在 resize 路径把 RGB 按单通道写出 → 黑白+变形）----
+
+@needs_engine
+def test_color_preserved_scale_mode(workdir):
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = run_engine(["-i", inp, "-s", "2", "-f", "png", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-2.0x.png"
+    assert out.exists()
+    assert Image.open(out).mode == "RGB"
+
+
+@needs_engine
+def test_color_preserved_width_target_resize_path(workdir):
+    # 48x32 → 宽 80：非整倍（比例 1.67 → 原生 2x 后精确 resize），必须保持彩色
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = run_engine(["-i", inp, "--width", "80", "-f", "png", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-80x.png"
+    assert out.exists()
+    assert Image.open(out).size == (80, 53)  # 等比：32*80/48 = 53.33 → 53
+    assert Image.open(out).mode == "RGB"
+
+
+@needs_engine
+def test_color_preserved_width_target_shortcut_path(workdir):
+    # 48x32 → 宽 96：整 2 倍捷径（无 resize），同样必须保持彩色
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = run_engine(["-i", inp, "--width", "96", "-f", "png", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-96x.png"
+    assert out.exists()
+    assert Image.open(out).mode == "RGB"
+
+
+@needs_engine
+def test_color_preserved_direct_resize_path(workdir):
+    # 目标小于原图 → 直通缩放路径，同样必须保持彩色
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = run_engine(["-i", inp, "--width", "24", "-f", "png", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(Resize)-24x.png"
+    assert out.exists()
+    assert Image.open(out).mode == "RGB"
+
+
+@needs_engine
+def test_color_preserved_jpg_output(workdir):
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = run_engine(["-i", inp, "--width", "80", "-f", "jpg", "-g", "-1"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / "in-(upconv7-anime)-80x.jpg"
+    assert out.exists()
+    assert Image.open(out).mode == "RGB"
