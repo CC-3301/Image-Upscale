@@ -6,7 +6,7 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** done（代码完成；验收清单见下方 Comments）
 
 - [ ] zip 解压后无需安装任何运行时即可运行 GUI 与 CLI
 - [ ] 全部打包模型随包分发，models 目录结构支持放入自定义 ncnn 模型即被识别

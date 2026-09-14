@@ -6,7 +6,7 @@
 
 **Blocked by:** 07, 05, 06
 
-**Status:** ready-for-agent
+**Status:** done（代码完成；验收清单见下方 Comments）
 
 - [ ] 拖入文件夹触发递归处理，展示逐文件进度与成功/失败汇总列表
 - [ ] 选中不支持降噪的模型（digital-art-4x、导入模型）时降噪控件禁用并提示
