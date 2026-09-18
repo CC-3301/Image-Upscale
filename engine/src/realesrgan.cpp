@@ -74,9 +74,14 @@ int RealESRGAN::load(const std::string& parampath, const std::string& modelpath)
             return -1;
         }
 
-        net.load_param(fp);
+        // ncnn：load_param / load_model 失败返回非 0（net.h 注释：return 0 if success）。
+        // 早期丢弃返回值 → 权重缺失/截断/根本不是 ncnn 模型时仍报成功（静默坏图）
+        const int pret = net.load_param(fp);
 
         fclose(fp);
+
+        if (pret != 0)
+            return -1;
     }
     {
         FILE* fp = _wfopen(modelpath.c_str(), L"rb");
@@ -86,13 +91,18 @@ int RealESRGAN::load(const std::string& parampath, const std::string& modelpath)
             return -1;
         }
 
-        net.load_model(fp);
+        const int mret = net.load_model(fp);
 
         fclose(fp);
+
+        if (mret != 0)
+            return -1;
     }
 #else
-    net.load_param(parampath.c_str());
-    net.load_model(modelpath.c_str());
+    if (net.load_param(parampath.c_str()) != 0)
+        return -1;
+    if (net.load_model(modelpath.c_str()) != 0)
+        return -1;
 #endif
 
     // initialize preprocess and postprocess pipeline (GPU only)
@@ -529,8 +539,6 @@ int RealESRGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                 cmd.submit_and_wait();
                 cmd.reset();
             }
-
-            fprintf(stderr, "%.2f%%\n", (float)(yi * xtiles + xi) / (ytiles * xtiles) * 100);
         }
 
         // download
@@ -615,7 +623,6 @@ int RealESRGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
             const int tile_w = in_tile_x1 - in_tile_x0;
             const int tile_h = in_tile_y1 - in_tile_y0;
 
-            fprintf(stderr, "[DBG] m2 geom %dx%d\n", tile_w, tile_h); fflush(stderr);
             // crop tile（RGB 原生）
             ncnn::Mat in;
             if (channels == 3)
@@ -647,7 +654,6 @@ int RealESRGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                 in_f32 = in_padded;
             }
 
-            fprintf(stderr, "[DBG] m4 padded %dx%d\n", in_f32.w, in_f32.h); fflush(stderr);
             // 推理（CPU extractor）
             ncnn::Mat out_f32;
             {
@@ -656,7 +662,6 @@ int RealESRGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                 ex.extract("output", out_f32);
             }
 
-            fprintf(stderr, "[DBG] m5 extracted %dx%d\n", out_f32.w, out_f32.h); fflush(stderr);
             // 反归一化 + 写回：to_pixels 自动处理 elempack；再裁掉 prepad 边缘（GPU 版由 postproc shader 裁剪）
             const int out_x0 = pad_left * scale;
             const int out_y0 = pad_top * scale;

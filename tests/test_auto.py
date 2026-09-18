@@ -134,3 +134,54 @@ def test_auto_folder_mixed_levels_mark_each_file(workdir):
     # 每个文件带上自己那次的解析档位（按处理顺序与 stderr 配对）
     expected = [f"{stem}-n{level}.png" for stem, level in zip(("a", "b"), levels)]
     assert sorted(x.name for x in outdir.iterdir()) == sorted(expected)
+
+
+# ---- 工单 44/45 回归：AUTO 的档位完整性与批量权重重载 ----
+
+@needs_engine
+def test_auto_rejected_when_denoise_ladder_incomplete(workdir):
+    """工单 44：AUTO 要求 无/低/中/高 四档齐备。
+
+    realcugan-pro 只有 无/高：早期 AUTO 只检查「1/2/3 里存在任意一档」就放行，
+    运行期按文件估计出 1/2 档后用它查清单（.at()）→ std::out_of_range → terminate。
+    现在必须在参数校验阶段就以退出码 1 拒绝，且不得崩溃。
+    """
+    inp = workdir / "in.png"
+    make_png(inp)
+    p = run_engine(["-i", inp, "-m", "realcugan-pro", "--denoise", "auto", "-f", "png", "-g", "-1"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "full denoise ladder" in p.stderr, p.stderr
+
+
+@needs_engine
+def test_auto_batch_zero_level_after_dirty_reloads_none_weights(workdir):
+    """工单 45：批量 AUTO 中「非 0 档在前、0 档在后」必须重载权重。
+
+    早期重载条件只比较倍数，而 AUTO 下 denoise_level 恒为 0，于是当前文件解析为 0 档时
+    不触发重载 → 沿用上一个文件（脏图）的权重出图，命名却写 -n0。
+    守卫方式：该 0 档产物必须与同一输入用 --denoise none 单跑出的产物逐位相同。
+    """
+    folder = workdir / "mixed"
+    folder.mkdir()
+    inp = folder / "a.jpg"
+    make_gradient(inp)
+    Image.open(inp).save(inp, quality=10)  # 脏图在前
+    make_gradient(folder / "b.png")        # 干净图在后
+
+    p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto", "-f", "png", "-g", "-1", "-v"])
+    assert p.returncode == 0, p.stderr
+    levels = _resolved_levels(p.stderr)
+    # 顺序守卫：夹具必须保持「非 0 在前、0 在后」，否则本用例会空转通过
+    assert len(levels) == 2 and levels[0] > 0 and levels[1] == 0, levels
+
+    batch_out = workdir / "mixed-(waifu2x_cunet)-nX-2.0x" / "b-n0.png"
+    assert batch_out.exists()
+
+    single = run_engine(["-i", folder / "b.png", "-m", "waifu2x_cunet", "--denoise", "none",
+                         "-f", "png", "-g", "-1"])
+    assert single.returncode == 0, single.stderr
+    # 单文件产物落在输入所在目录（single_file_outpath 用 in.parent_path()）
+    ref = folder / "b-(waifu2x_cunet)-n0-2.0x.png"
+    assert ref.exists(), sorted(x.name for x in folder.iterdir())
+
+    assert Image.open(batch_out).tobytes() == Image.open(ref).tobytes()

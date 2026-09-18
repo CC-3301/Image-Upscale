@@ -131,7 +131,7 @@
 - **现象**：v0.2.4 重新打包后，GUI 标题栏仍显示 v0.2.3。
 - **根源**：版本号有两处真相——package.ps1 的 `-Version` 只决定 dist 目录/zip 名，而 GUI 标题栏（工单 31）运行时读 csproj `<Version>`；打包脚本不同步也不校验，发版漏改 csproj 无人拦截。
 - **教训**：发版动作清单必须包含"改 csproj `<Version>`"；同一版本号概念要么只留一处真相，要么在打包入口强校验。
-- **守卫**：候选守卫 = package.ps1 打包前校验 csproj `<Version>` 与 `-Version` 一致（不一致即报错），尚未实施，另行确认。
+- **守卫**：**已实施** —— package.ps1 的 `-Version` 改为**必填**，并在打包前强校验 csproj `<Version>`；漏传或与 csproj 不一致即报错（README 构建段示例同步为 `-Version vX.Y.Z`，原写死 `v0.2.2`）。
 
 ### 3.10 判“是不是我们的问题”要拿官方原实现做参照物，不能拿另一个移植（工单 38/40）
 
@@ -139,6 +139,13 @@
 - **根源**：当时只对照了上游 ncnn 移植的行为，发现“我们和官方预编译 exe 表现一致”就收工了。但上游 ncnn 移植自己也漏了官方的变换，所以“两边一致”只证明忠实搬运，不证明正确。
 - **教训**：排除自身责任时，参照物要选**规格源头**（官方原实现/论文/上游 issue 区），不能用另一个第三方移植；发现上游有同类缺陷时，先搜上游 issue。反面同样成立：另一个实现（官方预编译 exe）是最好用的黑盒——把可疑变换手工做掉再喂给它，结果变了就能锁定变量。
 - **守卫**：无自动化守卫；引擎 pre/post 处理改动先与官方实现逐项对照，验证手法记在工单 40。
+
+### 3.11 AUTO 降噪按文件切档位：两个静默坑（工单 44/45）
+
+- **现象**：① `realcugan-pro` + 降噪「自动」（该模型**默认就是自动**）在带 JPEG 伪影的图上让引擎抛 `std::out_of_range` → `std::terminate`，DLL 拖垮 GUI；② 批量 AUTO 中「脏图在前、干净图在后」时，干净图沿用脏图的权重变体出图，文件名却写 `-n0`。
+- **根源**：① AUTO 的合法性检查只问「1/2/3 档**存在任意一个**」，而按文件估计出的档位要用 `mi.denoise.at()` 查表 —— `realcugan-pro` 只有 无/高 两档，`at(1)` 直接抛异常，且 `iu_run` 无 try/catch；② 权重重载条件只比较**倍数**，AUTO 下 `denoise_level` 恒为 0，导致「本文件 0 档」不触发重载；而 `impl.noise` 只作 `-1` 哨兵、**不参与选权重**，命名与 `configure` 却按本文件档位走。
+- **教训**：① 任何「值来自另一个集合」的查表都要先 `find` 再取值，`.at()` 在无异常边界的 DLL 导出面上等于定时炸弹；②「按文件变化的量」必须与「决定加载哪份权重的量」一一对应，重载条件漏掉一项就是静默错配（图错了，名字对）；③ AUTO 这类「运行期才解析出具体值」的功能，能力检查必须按**完整档位集合**而不是「有任意一档」。
+- **守卫**：`resolve_model_files` 返回 bool（查不到档位即报错，退出码 2）；重载条件加入 `loaded_denoise`；AUTO 要求 无/低/中/高 四档齐备，不连续档位的模型（如 realcugan-pro）GUI 不提供「自动」项。建议补测试：AUTO 目录中 0 档产物与 `--denoise none` 单文件产物**逐位相同**，以及 pro + auto 的回归用例。
 
 ## 4. Windows 工具链（fork / 新机器必读）
 
@@ -154,5 +161,5 @@
 - **PATH 上的 dotnet 可能只是运行时**：`dotnet build` 报"下载 .NET SDK"即是；用 `dotnet --list-sdks` 验证是否有 8.x。SDK 可能装在非标准位置（不在 package.ps1 的常见位置探测列表内）：用 `--list-sdks` 逐个验证候选 dotnet.exe，找到后设 `IU_DOTNET` 指向它，再跑构建/打包。
 - **Git Bash 调 cmd**：`cmd /c` 的 `/c` 被路径转换吃掉 → 用 `cmd //c "D:\\完整\\路径.bat"`。
 - **PowerShell 5.1 + 含中文的 .ps1**：无 BOM 的 UTF-8 被按 ANSI 解析、中文注释炸语法 → .ps1 存成 UTF-8 with BOM。
-- **测试跑法**：`set IU_ENGINE=<仓库>\bld\image-upscale.exe` 后 `python -m pytest tests -q`；测试统一 `-g -1`（CPU 后端）保证确定性，GPU 只留 smoke。
+- **测试跑法**：`python -m pytest tests -q`；测试统一 `-g -1`（CPU 后端）保证确定性，GPU 只留 smoke。conftest 默认找 `bld/image-upscale.exe`（`IU_ENGINE` 仍可覆盖）；以前必须先设 `IU_ENGINE`，是因为默认路径写成了 `build/Release/`（本布局不存在）→ 全部用例静默 skip、pytest 仍全绿（假绿）；现在引擎缺失会在会话末尾红色告警。
 - **GitHub 单文件 100MB 上限会拒推整个分支**（v0.2.2 发布）：`git add -A` 把 `.tmp-publish/` 里的 146MB exe 扫进历史，后续虽删但 blob 仍在 → push 被 pre-receive 拒。远端未收到时用 `git filter-branch --index-filter "git rm -r --cached --ignore-unmatch <路径>" -- <上次tag>..main` 重写未推送区段：树未被该文件影响的提交 SHA 不变，受影响的后代提交会全部换 SHA（changelog 里的链接要重新生成）；已推送后才发现就只能 BFG/filter-repo。预防：发版前 `git log --all -- <临时目录>/` 检查，`.gitignore` 覆盖临时目录。

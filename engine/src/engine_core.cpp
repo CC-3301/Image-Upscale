@@ -593,11 +593,17 @@ static std::vector<int> plan_native_scales(const ModelInfo& mi, double ratio)
 }
 
 // ---- 模型文件解析（按架构与倍数/降噪档） ----
-static void resolve_model_files(const std::wstring& models_dir, const ModelInfo& mi, int scale, int denoise_level,
+static bool resolve_model_files(const std::wstring& models_dir, const ModelInfo& mi, int scale, int denoise_level,
                                 path_t& parampath, path_t& binpath, int& prepadding)
 {
     path_t model_dir = models_dir + PATHSTR("/") + widen(mi.dir);
-    const std::string& token = mi.denoise.at(denoise_level);
+
+    // 档位必须由清单声明：AUTO 按文件估计出的档位（如 1/2）在只有 无/高 的模型上并不存在，
+    // 早期直接 .at() 会抛 std::out_of_range 且无人捕获 → std::terminate（拖垮宿主 GUI）。
+    auto dit = mi.denoise.find(denoise_level);
+    if (dit == mi.denoise.end())
+        return false;
+    const std::string& token = dit->second;
 
     if (mi.arch == "waifu2x")
     {
@@ -619,6 +625,7 @@ static void resolve_model_files(const std::wstring& models_dir, const ModelInfo&
         binpath = sanitize_filepath(models_dir + PATHSTR("/") + widen(mi.dir + "/" + token + ".bin"));
     }
     prepadding = mi.prepad.count(scale) ? mi.prepad.at(scale) : 0;
+    return true;
 }
 
 // 单文件输出的命名（工单 02 命名规则）
@@ -662,8 +669,11 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         advance_progress();
     };
 
-    // 当前已加载的模型倍数（尺寸模式可能按文件切换倍数 → 变更时重载）
+    // 当前已加载的模型倍数与降噪档（尺寸模式可能按文件切换倍数；AUTO 会按文件切换降噪档）
+    // 两者任一变化都必须重载权重：只比较倍数会让“上一文件非零档、本文件 0 档”沿用旧变体出图，
+    // 而命名与配置却按本文件档位写（工单 39 的静默错配）
     int loaded_scale = -1;
+    int loaded_denoise = -1;
     path_t cur_param, cur_bin;
     int cur_prepad = 0;
 
@@ -829,15 +839,22 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             for (size_t pi = 0; pi < plan.size(); ++pi)
             {
                 const int s = plan[pi];
-                if (s != loaded_scale || (denoise_auto && file_denoise != denoise_level))
+                if (s != loaded_scale || file_denoise != loaded_denoise)
                 {
-                    resolve_model_files(models_dir, mi, s, file_denoise, cur_param, cur_bin, cur_prepad);
+                    if (!resolve_model_files(models_dir, mi, s, file_denoise, cur_param, cur_bin, cur_prepad))
+                    {
+                        log_err("model %s has no denoise level %d\n", mi.id.c_str(), file_denoise);
+                        fail(true, "model load failed", inpath);
+                        return false;
+                    }
                     if (engine->load_files(cur_param, cur_bin) != 0)
                     {
+                        log_err("model files: %s\n", utf8_from_wide(cur_param).c_str());
                         fail(true, "model load failed", inpath);
                         return false;
                     }
                     loaded_scale = s;
+                    loaded_denoise = file_denoise;
                     if (verbose)
                     {
                         log_err("engine loaded scale=%dx prepad=%d\n", s, cur_prepad);
@@ -1248,10 +1265,13 @@ IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_li
 
     if (denoise_auto)
     {
-        bool any_level = mi->denoise.count(1) || mi->denoise.count(2) || mi->denoise.count(3);
-        if (!any_level)
+        // 工单 44：AUTO 按文件估计出的档位要直接查清单，档位不连续的模型（如 realcugan-pro
+        // 只有 无/高）会在运行期落到不存在的档位，故 AUTO 要求 无/低/中/高 四档齐备
+        const bool full_ladder = mi->denoise.count(0) && mi->denoise.count(1) &&
+                                 mi->denoise.count(2) && mi->denoise.count(3);
+        if (!full_ladder)
         {
-            log_err("model %s does not support denoise (cannot use AUTO)\n", mi->id.c_str());
+            log_err("model %s has no full denoise ladder (AUTO requires none/low/mid/high)\n", mi->id.c_str());
             return EXIT_PARAM;
         }
         denoise_level = 0; // 具体档位按文件估计（见 run_files）

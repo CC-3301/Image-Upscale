@@ -25,7 +25,7 @@ scripts\engine-build.bat
 dotnet build gui\ImageUpscaleGui.csproj -c Release
 
 # 一键打包 portable zip（引擎融合进单文件，输出 dist\vX.Y.Z\）
-powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version v0.2.2
+powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z
 ```
 
 ## 模型获取

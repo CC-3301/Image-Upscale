@@ -71,9 +71,14 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
             return -1;
         }
 
-        net.load_param(fp);
+        // ncnn：load_param / load_model 失败返回非 0（net.h 注释：return 0 if success）。
+        // 早期丢弃返回值 → 权重缺失/截断/根本不是 ncnn 模型时仍报成功（静默坏图）
+        const int pret = net.load_param(fp);
 
         fclose(fp);
+
+        if (pret != 0)
+            return -1;
     }
     {
         FILE* fp = _wfopen(modelpath.c_str(), L"rb");
@@ -83,13 +88,18 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
             return -1;
         }
 
-        net.load_model(fp);
+        const int mret = net.load_model(fp);
 
         fclose(fp);
+
+        if (mret != 0)
+            return -1;
     }
 #else
-    net.load_param(parampath.c_str());
-    net.load_model(modelpath.c_str());
+    if (net.load_param(parampath.c_str()) != 0)
+        return -1;
+    if (net.load_model(modelpath.c_str()) != 0)
+        return -1;
 #endif
 
     // initialize preprocess and postprocess pipeline

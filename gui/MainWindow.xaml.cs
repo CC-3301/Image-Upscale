@@ -192,9 +192,12 @@ public partial class MainWindow : Window
 
         // 降噪档位（工单 22 中文文案；工单 23 能力判据；工单 24 默认自动、不支持固定无）
         // 工单 41：项与引擎档位同步登记，构造命令行时按登记值取，不能再用序号推档位
+        // 工单 44：AUTO 需要 无/低/中/高 四档齐备（引擎侧同样拒绝不连续档位），
+        //          故 realcugan-pro 这类只有 无/高 的模型不提供「自动」项，默认落「无」
+        bool autoOk = m.Denoise.ContainsKey(1) && m.Denoise.ContainsKey(2) && m.Denoise.ContainsKey(3);
         DenoiseBox.Items.Clear();
         _denoiseLevels.Clear();
-        DenoiseBox.Items.Add("自动"); _denoiseLevels.Add(-1);
+        if (autoOk) { DenoiseBox.Items.Add("自动"); _denoiseLevels.Add(-1); }
         DenoiseBox.Items.Add("无");   _denoiseLevels.Add(0);
         if (m.Denoise.ContainsKey(1)) { DenoiseBox.Items.Add("低"); _denoiseLevels.Add(1); }
         if (m.Denoise.ContainsKey(2)) { DenoiseBox.Items.Add("中"); _denoiseLevels.Add(2); }
@@ -203,13 +206,14 @@ public partial class MainWindow : Window
         {
             DenoiseHint.Visibility = Visibility.Collapsed;
             DenoiseBox.IsEnabled = true;
-            DenoiseBox.SelectedIndex = 0; // 自动
+            // 默认「自动」（工单 24）；档位不连续时首位就是「无」
+            DenoiseBox.SelectedIndex = 0;
         }
         else
         {
             DenoiseHint.Visibility = Visibility.Visible;
             DenoiseBox.IsEnabled = false;
-            DenoiseBox.SelectedIndex = 1; // 无
+            DenoiseBox.SelectedIndex = 0; // 唯一一项「无」
         }
     }
 

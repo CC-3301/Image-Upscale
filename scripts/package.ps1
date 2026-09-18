@@ -3,11 +3,22 @@
 # 布局（工单 27）：根目录仅 ImageUpscale.exe + models/ + 许可文档；引擎以 iu_engine.dll 收编进单文件
 # 说明：不做任何删除操作——输出到版本化子目录，旧包由人工处置
 param(
-    [string]$Version = 'v0.2.2'
+    [Parameter(Mandatory = $true, HelpMessage = '发布版本号，形如 v0.2.6；必须与 gui/ImageUpscaleGui.csproj 的 <Version> 一致')]
+    [string]$Version
 )
 $ErrorActionPreference = 'Stop'
 
 $repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+
+# 版本号真相只有一处：csproj 的 <Version>（工单 31 / lessons §3.9 的候选守卫）。
+# 在打包入口强校验：漏改 csproj、或忘记传 -Version 时直接报错，不产出错版本号的包。
+$csprojPath = Join-Path $repo 'gui\ImageUpscaleGui.csproj'
+$csprojVer = [regex]::Match((Get-Content $csprojPath -Raw), '<Version>\s*([^<\s]+)\s*</Version>').Groups[1].Value
+if (-not $csprojVer) { throw "未能从 $csprojPath 解析出 <Version>" }
+if ($Version -ne "v$csprojVer") {
+    throw "-Version $Version 与 csproj <Version>$csprojVer</Version> 不一致；应传 -Version v$csprojVer"
+}
+
 $dist = Join-Path $repo "dist\$Version"
 $pkg = Join-Path $dist 'Image-Upscale'
 # dotnet 探测：IU_DOTNET 环境变量 > PATH > 常见位置；必须含 .NET 8 SDK（PATH 上的可能只是运行时）
