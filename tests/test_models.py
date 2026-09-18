@@ -171,6 +171,40 @@ def test_corrupt_weight_file_is_inference_error(tmp_path, workdir, corrupt):
     assert "model load failed" in p.stderr, p.stderr
 
 
+# ---- 工单 48：模型侧的日志出口必须经 iu_run 登记的 sink 到宿主 ----
+@needs_engine
+@pytest.mark.parametrize("arch,denoise_token,param_name", [
+    ("waifu2x", "0", "noise0_scale2.0x_model.param"),          # waifu2x.cpp 的 _wfopen 失败点
+    ("cugan", "no-denoise", "up2x-no-denoise.param"),            # realcugan.cpp
+    ("rrdb", "digital-art-4x", "digital-art-4x.param"),          # realesrgan.cpp
+])
+def test_model_open_failure_reaches_log_sink(workdir, arch, denoise_token, param_name):
+    """模型打不开权重时的提示必须到宿主可见的输出（不是直写 stderr 的宽字符 fprintf）。
+
+    三个模型 TU 原先各自 fwprintf(stderr, "_wfopen %ls failed")：GUI 无控制台看不到，
+    宽字符路径还会乱码（lessons §1.3）。现统一走 iu_log.h 的 sink（iu_run 登记宿主回调）。
+    本用例按架构各覆盖一处 _wfopen 失败点：sink 登记被改坏（如 iu_run 不再调
+    iu_set_log_sink）时三档一起红，不会静默全绿。
+    """
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    # 清单声明了模型、权重目录缺失 → 解析出的 param 必然打不开；无需真权重，故只依赖引擎
+    md = workdir / "models"
+    md.mkdir()
+    (md / "manifest.conf").write_text(
+        f"model ghost\ndisplay ghost\ngroup manga\narch {arch}\ndir ghost\n"
+        f"scale 2\nprepad 2\nin in0\nout out0\n"
+        f"denoise none {denoise_token}\n",
+        encoding="utf-8")
+
+    p = run_engine(["-i", inp, "-m", "ghost", "--models-dir", md, "--denoise", "none", "-g", "-1"])
+
+    assert p.returncode == 2, (p.returncode, p.stderr)
+    # 模型侧文案 + 清单解析出的文件名（证明消息带着真路径，而不是空壳）
+    assert "cannot open model file: " in p.stderr, p.stderr
+    assert param_name in p.stderr, p.stderr
+
+
 @needs_engine
 def test_verbose_reports_resolved_model_variant(workdir):
     """工单 06：verbose 要给出「解析档位 → 模型变体文件」的落点（原先只输出档位数字）"""

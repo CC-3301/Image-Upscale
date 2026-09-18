@@ -18,12 +18,12 @@
 - **教训**："小图没事、大图崩"是内存生存期 bug 的签名症状，别当偶发问题；ncnn::Mat 包装外部指针不持有引用，缓冲生存期必须覆盖到写盘完成。
 - **守卫**：`tests/test_alpha.py` 大图 RGBA（512×512）× 三种输出格式。
 
-### 1.3 跨进程输出的编码必须钉死为 UTF-8（工单 17）
+### 1.3 跨进程输出的编码必须钉死为 UTF-8（工单 17；日志出口统一见工单 48）
 
 - **现象**：中文/日文文件名在 GUI 日志乱码。
 - **根源**：`fprintf("%ls")` 在输出重定向下经 C locale（中文 Windows = GBK）转多字节，GUI 按 UTF-8 解码必乱码；GBK 无法表示假名（输出 `?`）。同类：narrow `fopen` 遇非 ASCII 路径同炸（`parse_manifest` 已改 `_wfopen`）。
-- **教训**：引擎对管道的所有含路径输出统一走 `utf8_from_wide()`（WideCharToMultiByte CP_UTF8），控制台直跑另加 `SetConsoleOutputCP(CP_UTF8)`；新增输出点禁止直接 `%ls`。
-- **守卫**：`tests/test_output_encoding.py`（中文 + 日文文件名）。
+- **教训**：引擎对管道的所有含路径输出统一走 `iu_to_utf8()`（`engine/src/iu_log.h`，WideCharToMultiByte CP_UTF8）；**模型实现侧**（waifu2x / realcugan / realesrgan）的提示再经 `iu_log_path_error()` 走同一个头的 sink，由 `iu_run` 登记宿主回调 —— 除 `main.cpp` 的控制台壳外禁止直写 stderr。控制台直跑另加 `SetConsoleOutputCP(CP_UTF8)`；新增输出点禁止直接 `%ls`。
+- **守卫**：`tests/test_output_encoding.py`（中文 + 日文文件名）；`tests/test_models.py::test_model_open_failure_reaches_log_sink`（三个模型 TU 各一处「权重打不开」，必须经 sink 到达宿主 stderr；去掉 `iu_run` 里的 sink 登记即三档全红）。
 
 ### 1.4 资源定位按 exe 自身位置，不信任 CWD（工单 16 缺陷）
 
