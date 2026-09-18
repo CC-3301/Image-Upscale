@@ -43,6 +43,37 @@ powershell -ExecutionPolicy Bypass -File scripts/fetch-models.ps1
 | `digital-art-4x` | upscayl/upscayl resources | Upscayl 官方允许再分发 |
 | `realesr-general-x4v3`（含 `-low` / `-mid` / `-high`） | xinntao/Real-ESRGAN v0.2.5.0 权重经 pnnx 转换 | BSD-3 |
 
+### 导入自己的模型
+
+1. 在 `models/` 下新建子目录（目录名与下面的 `dir` 一致），放入 ncnn 转换出的 `.param` 与 `.bin`
+2. 在 `models/manifest.conf` 追加一块（字段规则见下），保存后重启程序
+3. 模型会出现在列表里（按名称 A-Z 排序；不写 `denoise` 时降噪固定为「无」并灰置）
+
+```conf
+model my-model            # 必填：清单 id（也是命令行 -m 与 setting.ini 记录的值）
+display my-model          # 列表显示名，同时用作产物文件名里的模型段
+group general             # 分组标记（当前界面按 A-Z 平铺，此字段仅作记录）
+arch compact              # 推理内核：waifu2x | cugan | rrdb | compact
+dir my-model              # models/ 下的子目录名
+scale 4                   # 原生倍率，可写多行声明多个倍率
+prepad 10                 # 预填充像素：单值 = 所有倍率同值；也可按倍率写 `prepad 2 18`
+in data                   # 网络输入 blob 名（取自 .param）
+out output                # 网络输出 blob 名（取自 .param）
+tileauto realesrgan       # 自动 tile 策略：upconv | cunet | cugan | realesrgan
+denoise none my-model     # 档位 none/low/mid/high → 该架构的权重变体 token；不写 = 不支持降噪
+```
+
+权重文件名由 `arch` 决定（`<token>` 取自 `denoise` 行）：
+
+| arch | 权重文件（放在 `models/<dir>/` 下） | token 示例 |
+| --- | --- | --- |
+| `waifu2x` | `noise<token>_scale2.0x_model.param` / `.bin`（仅支持 2x） | `0` / `1` / `2` / `3` |
+| `cugan` | `up<倍率>x-<token>.param` / `.bin` | `no-denoise` / `denoise3x` |
+| `rrdb` / `compact` | `<token>.param` / `.bin` | 直接就是文件名 |
+
+Real-CUGAN pro 系权重额外加一行 `pro yes`（需官方 [0.15,0.85] 仿射归一化）。
+降噪档位「自动」需要该模型 无/低/中/高 **四档齐备**，否则界面不提供「自动」项。
+
 ## 使用
 
 解压后运行 `ImageUpscale.exe`：
