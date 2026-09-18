@@ -64,7 +64,9 @@
         <!-- 降噪 + 输出 -->
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
             <!-- v0.2.4：三组（降噪/输出格式/输出质量）整体一行不换行（维护者定案）；MinWidth 兑现最坏情况（降噪提示可见）不裁剪
-                 工单 42：新增第四组“降采样方式”（放在输出质量之后），实测最坏情况行宽 758px → MinWidth 780 -->
+                 工单 42：新增第四组“降采样方式”（放在输出质量之后），实测最坏情况行宽 758px → MinWidth 780
+                 2026-09-19：“Catmull-Rom”在 100px 下被裁（微软雅黑 UI 12px 文字宽 76.1px + 下拉箭头/内边距约 30px），
+                 下拉宽度 100 → 115（行宽 758 → 773，MinWidth 780 仍成立） -->
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="降噪：" VerticalAlignment="Center"/>
@@ -89,7 +91,7 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="降采样方式：" VerticalAlignment="Center" Margin="16,0,0,0"/>
                     <!-- 工单 42：缩小路径的重采样滤镜（默认 Lanczos）；工单 43：放大不再插值，改由模型多轮完成 -->
-                    <ComboBox x:Name="DownFilterBox" Width="100"/>
+                    <ComboBox x:Name="DownFilterBox" Width="115"/>
                 </StackPanel>
             </StackPanel>
         </GroupBox>

@@ -46,10 +46,8 @@ public partial class MainWindow : Window
     // （下拉项按模型能力动态增删，缺档位的模型上“序号”不再等于“档位”）
     private readonly List<int> _denoiseLevels = new();
 
-    // 工单 42：降采样滤镜（界面标签 ↔ 引擎 token 一一登记，同样不靠序号推语义；token 表供 SettingsStore 校验）
-    // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
-    internal static readonly string[] DownFilterTokens = { "lanczos", "catmullrom", "bicubic", "box" };
-    private static readonly string[] DownFilterLabels = { "Lanczos", "Catmull-Rom", "Bicubic", "Box" };
+    // 工单 42：降采样滤镜的 token ↔ 标签表已移到 SettingsStore（单一定义来源）——
+    // 原先定义在此处、由 SettingsStore 反向引用 MainWindow，依赖方向是颠倒的
 
     public MainWindow()
     {
@@ -62,7 +60,7 @@ public partial class MainWindow : Window
         // 工单 25/37：几何恢复必须在显示之前（Loaded 时窗口已渲染，先闪默认位再跳走）；
         // 引擎定位与其余设置恢复仍在 OnLoaded
         // 工单 42：降采样下拉（与模型无关的固定档位表；默认项 = Lanczos）
-        foreach (var label in DownFilterLabels)
+        foreach (var label in SettingsStore.DownFilterLabels)
             DownFilterBox.Items.Add(label);
         DownFilterBox.SelectedIndex = 0;
         RestoreWindowBounds(SettingsStore.Load());
@@ -123,7 +121,7 @@ public partial class MainWindow : Window
         FormatBox.SelectedIndex = fmtIdx;
 
         // 工单 42：降采样滤镜（未记录/非法值 → 默认 Lanczos）
-        var dfIdx = Array.IndexOf(DownFilterTokens, s.DownFilter);
+        var dfIdx = Array.IndexOf(SettingsStore.DownFilterTokens, s.DownFilter);
         DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : 0;
 
         // 质量：真源为输入框（v0.2.4 去滑条），非法存储值回退默认 90
@@ -323,7 +321,7 @@ public partial class MainWindow : Window
         // 工单 42：降采样滤镜（只在缩小路径生效；倍率模式下引擎忽略该参数）
         var dfSel = DownFilterBox.SelectedIndex;
         args.Add("--down-filter");
-        args.Add(DownFilterTokens[dfSel >= 0 && dfSel < DownFilterTokens.Length ? dfSel : 0]);
+        args.Add(SettingsStore.DownFilterTokens[dfSel >= 0 && dfSel < SettingsStore.DownFilterTokens.Length ? dfSel : 0]);
 
         var fmt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString();
         args.Add("-f");
@@ -455,7 +453,7 @@ public partial class MainWindow : Window
 
         // 工单 42：降采样滤镜（与模型无关，引擎缺失时也照样记录）
         var dfSelSave = DownFilterBox.SelectedIndex;
-        s.DownFilter = DownFilterTokens[dfSelSave >= 0 && dfSelSave < DownFilterTokens.Length ? dfSelSave : 0];
+        s.DownFilter = SettingsStore.DownFilterTokens[dfSelSave >= 0 && dfSelSave < SettingsStore.DownFilterTokens.Length ? dfSelSave : 0];
 
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
@@ -483,6 +481,11 @@ public class SettingsStore
     public int OutputQuality = -1;     // -1 = 无记录
     // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）
     public string DownFilter = "lanczos";
+
+    // 工单 42：降采样滤镜的 token ↔ 界面标签（**单一定义来源**；界面项与 setting.ini 校验共用）。
+    // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
+    internal static readonly string[] DownFilterTokens = { "lanczos", "catmullrom", "bicubic", "box" };
+    internal static readonly string[] DownFilterLabels = { "Lanczos", "Catmull-Rom", "Bicubic", "Box" };
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;
     public int WindowTop = int.MinValue;
@@ -518,7 +521,7 @@ public class SettingsStore
             s.ScaleHeight = TryPositiveInt(map, "LastScaleHeight");
             s.OutputExt = map.TryGetValue("LastOutputExt", out v) && v is "jpg" or "png" or "webp" ? v : "jpg";
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
-            s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(MainWindow.DownFilterTokens, v) >= 0 ? v : "lanczos";
+            s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : "lanczos";
 
             // 工单 25：窗口几何
             s.WindowLeft = map.TryGetValue("LastWindowLeft", out v) && int.TryParse(v, out var nl) ? nl : int.MinValue;

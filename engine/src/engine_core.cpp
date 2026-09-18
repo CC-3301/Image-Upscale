@@ -34,6 +34,7 @@
 #include "realesrgan.h"
 
 #include "filesystem_utils.h"
+#include "iu_log.h" // 引擎内部统一日志出口（模型实现与引擎核心共用，禁止直写 stderr）
 
 #include "engine_api.h"
 #include <cstdarg>
@@ -243,6 +244,9 @@ struct CuganEngine : IEngine
         // （网点窗高频 48.3，原图 47.1）但色度噪点 5.02%；2=rough 色度噪点 0.44% 但纹理偏平（35.9）。
         // 官方 ncnn 二进制同样如此（-c 1 彩噪 4.35% / -c 2 0.80%，pro 偏暖 +2.97 / +0.63），
         // 属上游 SE 同步近似所致，暂不追。
+        // 不可达代码警示（2026-09-19 审查）：档位 3（very rough）的缓存网格与 stage2 不一致
+        // （very_rough 按 32px 网格写键、stage2 按 tilesize 读键，且尾部图块无人写入），
+        // realcugan.cpp 里 syncgap==3 的分支启用后会静默出坏图。此处固定 2 即令其不可达，勿改回 3。
         impl.syncgap = 2;
     }
 };
@@ -463,16 +467,6 @@ static std::wstring widen(const std::string& s)
 
 // 宽字符 → UTF-8（工单 17：%ls 在输出重定向下经 C locale 转为 ANSI 码页（中文 Windows = GBK），
 // GUI 按 UTF-8 解码必乱码；统一显式转 UTF-8 后输出）
-static std::string utf8_from_wide(const std::wstring& w)
-{
-    if (w.empty())
-        return std::string();
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), NULL, NULL, NULL, NULL);
-    std::string s((size_t)n, '\0');
-    if (n > 0)
-        WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, NULL, NULL);
-    return s;
-}
 
 // ---- 降采样滤镜（工单 42）：只在“缩小”路径生效；放大一律由多轮模型完成（工单 43）----
 // 名字沿用界面标签（三次卷积家族里 Bicubic/Mitchell/Catmull-Rom 常被混用，本项目里
@@ -662,7 +656,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         log_out("progress %d/%d\n", done, total);
     };
     auto fail = [&](bool inference_failure, const char* msg, const path_t& path) {
-        log_err("%s: %s\n", msg, utf8_from_wide(path).c_str());
+        log_err("%s: %s\n", msg, iu_to_utf8(path).c_str());
         if (inference_failure)
             infer_failures++;
         else
@@ -787,7 +781,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
 
         if (verbose)
         {
-            log_err("loaded %s (%dx%d)\n", utf8_from_wide(inpath).c_str(), w, h);
+            log_err("loaded %s (%dx%d)\n", iu_to_utf8(inpath).c_str(), w, h);
         }
 
         // 目标尺寸模式的每文件决策：指定维度 ≥ 原图 → 超分；< 原图 → 直通缩放
@@ -861,7 +855,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                     }
                     if (engine->load_files(cur_param, cur_bin) != 0)
                     {
-                        log_err("model files: %s\n", utf8_from_wide(cur_param).c_str());
+                        log_err("model files: %s\n", iu_to_utf8(cur_param).c_str());
                         fail(true, "model load failed", inpath);
                         return false;
                     }
@@ -871,7 +865,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                     {
                         // 工单 06：verbose 要能看出解析出的档位最终落到哪个模型变体文件
                         log_err("engine loaded scale=%dx denoise=%d prepad=%d\n", s, file_denoise, cur_prepad);
-                        log_err("model variant: %s\n", utf8_from_wide(cur_param).c_str());
+                        log_err("model variant: %s\n", iu_to_utf8(cur_param).c_str());
                     }
                 }
                 engine->configure(s, file_denoise, tilesize, cur_prepad);
@@ -1048,7 +1042,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             continue;
         }
         // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8，工单 17）
-        log_out("%s -> %s done\n", utf8_from_wide(inpath).c_str(), utf8_from_wide(outpath).c_str());
+        log_out("%s -> %s done\n", iu_to_utf8(inpath).c_str(), iu_to_utf8(outpath).c_str());
 
         advance_progress();
     }
@@ -1185,7 +1179,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         }
         else
         {
-            log_err("unknown or incomplete argument: %s\n", utf8_from_wide(a).c_str());
+            log_err("unknown or incomplete argument: %s\n", iu_to_utf8(a).c_str());
             print_usage();
             return EXIT_PARAM;
         }
@@ -1273,7 +1267,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     }
     if (!mi)
     {
-        log_err("unknown model id: %s\n", utf8_from_wide(model_id).c_str());
+        log_err("unknown model id: %s\n", iu_to_utf8(model_id).c_str());
         return EXIT_PARAM;
     }
 
@@ -1367,7 +1361,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
 
         if (found.empty())
         {
-            log_err("no matching image files (jpg/jpeg/png/webp) in: %s\n", utf8_from_wide(inputpath).c_str());
+            log_err("no matching image files (jpg/jpeg/png/webp) in: %s\n", iu_to_utf8(inputpath).c_str());
             return EXIT_PARAM;
         }
 
@@ -1392,7 +1386,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         std::filesystem::create_directories(out_dir_path, ec);
         if (ec)
         {
-            log_err("cannot create output directory: %s (%s)\n", utf8_from_wide(output_dir).c_str(), ec.message().c_str());
+            log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(output_dir).c_str(), ec.message().c_str());
             return EXIT_IO;
         }
 
@@ -1411,12 +1405,12 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     {
         if (!ext_is_image(get_file_extension(inputpath)))
         {
-            log_err("unsupported input file type: %s (jpg/jpeg/png/webp)\n", utf8_from_wide(inputpath).c_str());
+            log_err("unsupported input file type: %s (jpg/jpeg/png/webp)\n", iu_to_utf8(inputpath).c_str());
             return EXIT_PARAM;
         }
         if (!filepath_is_readable(inputpath))
         {
-            log_err("input file not readable: %s\n", utf8_from_wide(inputpath).c_str());
+            log_err("input file not readable: %s\n", iu_to_utf8(inputpath).c_str());
             return EXIT_IO;
         }
         input_files.push_back(inputpath);
@@ -1501,7 +1495,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         log_err("model: %s arch=%s denoise=%d tilesize=%d gpuid=%d mode=%s\n",
                 mi->id.c_str(), mi->arch.c_str(), denoise_level, tilesize, gpuid,
                 target_mode ? "target" : "ratio");
-        log_err("down-filter: %s\n", utf8_from_wide(kDownFilterNames[down_filter]).c_str());
+        log_err("down-filter: %s\n", iu_to_utf8(kDownFilterNames[down_filter]).c_str());
     }
 
     // ---- 按架构创建引擎并执行循环 ----
@@ -1536,11 +1530,19 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     return rc;
 }
 
+// 模型实现（waifu2x / realcugan / realesrgan）经此出口输出：统一走宿主回调，不再直写 stderr（lessons §1.3）
+static void iu_err_sink(const char* utf8_line)
+{
+    if (g_err_cb)
+        g_err_cb(utf8_line, g_user);
+}
+
 IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_line_cb err_cb, void* user)
 {
     g_out_cb = out_cb;
     g_err_cb = err_cb;
     g_user = user;
+    iu_set_log_sink(&iu_err_sink); // 注册共享日志出口（每次 iu_run 都重设，避免悬空回调）
 
     // 异常不得逃出导出面：std::filesystem 在权限拒绝 / 内存不足时会抛异常，
     // 逃出 DLL 边界即 std::terminate，会把宿主 GUI 一起带走

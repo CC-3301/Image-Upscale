@@ -22,11 +22,12 @@ def test_cpu_2x_dimensions_and_psrn(workdir):
 
     baseline_path = BASELINE / "cpu_2x.png"
     if not baseline_path.exists():
-        # 首次运行：建立基准。基准是「人工确认过的黄金参考」，无法自动判定，
-        # 所以本次只生成、不判定通过（原先自动生成 + 不断言 → 新机器上永远全绿）
+        # 基准图已随仓库分发（tests/.baseline/cpu_2x.png 入库）：缺失说明被删除或未同步。
+        # 重新生成后本用例仍跳过判定（基准是黄金参考，只能人工确认无误），并由 conftest
+        # 的「跳过可见化」在会话末尾告警，不会假绿。
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(baseline_path)
-        pytest.skip(f"PSNR 基准首次生成 {baseline_path}：人工确认输出无误后重跑本用例才算通过")
+        pytest.skip(f"PSNR 基准缺失，已重新生成 {baseline_path}；与 git 中的版本核对后重跑")
 
     # 后续运行：PSNR 容差断言（不逐像素相等）
     ref = Image.open(baseline_path)

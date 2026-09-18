@@ -1,6 +1,7 @@
 // waifu2x implemented with ncnn library
 
 #include "waifu2x.h"
+#include "iu_log.h" // 统一日志出口（经引擎回调交宿主显示，不直写 stderr；lessons §1.3）
 
 #include <algorithm>
 #include <vector>
@@ -79,7 +80,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
         FILE* fp = _wfopen(parampath.c_str(), L"rb");
         if (!fp)
         {
-            fwprintf(stderr, L"_wfopen %ls failed\n", parampath.c_str());
+            iu_log_path_error("cannot open model file: ", parampath);
             return -1;
         }
 
@@ -96,7 +97,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
         FILE* fp = _wfopen(modelpath.c_str(), L"rb");
         if (!fp)
         {
-            fwprintf(stderr, L"_wfopen %ls failed\n", modelpath.c_str());
+            iu_log_path_error("cannot open model file: ", modelpath);
             return -1;
         }
 

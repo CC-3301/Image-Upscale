@@ -1,6 +1,7 @@
 // realcugan implemented with ncnn library
 
 #include "realcugan.h"
+#include "iu_log.h" // 统一日志出口（经引擎回调交宿主显示，不直写 stderr；lessons §1.3）
 
 #include <algorithm>
 #include <vector>
@@ -141,7 +142,7 @@ int RealCUGAN::load(const std::string& parampath, const std::string& modelpath)
         FILE* fp = _wfopen(parampath.c_str(), L"rb");
         if (!fp)
         {
-            fwprintf(stderr, L"_wfopen %ls failed\n", parampath.c_str());
+            iu_log_path_error("cannot open model file: ", parampath);
             return -1;
         }
 
@@ -158,7 +159,7 @@ int RealCUGAN::load(const std::string& parampath, const std::string& modelpath)
         FILE* fp = _wfopen(modelpath.c_str(), L"rb");
         if (!fp)
         {
-            fwprintf(stderr, L"_wfopen %ls failed\n", modelpath.c_str());
+            iu_log_path_error("cannot open model file: ", modelpath);
             return -1;
         }
 
@@ -295,6 +296,7 @@ int RealCUGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                 return process_cpu_se(inimage, outimage);
             if (syncgap == 2)
                 return process_cpu_se_rough(inimage, outimage);
+            // 不可达（engine_core 固定 syncgap=2），且本档缓存网格与 stage2 不一致，启用会静默出坏图。勿启用。
             if (syncgap == 3)
                 return process_cpu_se_very_rough(inimage, outimage);
         }
@@ -314,6 +316,7 @@ int RealCUGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
             return process_se(inimage, outimage);
         if (syncgap == 2)
             return process_se_rough(inimage, outimage);
+        // 不可达（engine_core 固定 syncgap=2），且本档缓存网格与 stage2 不一致，启用会静默出坏图。勿启用。
         if (syncgap == 3)
             return process_se_very_rough(inimage, outimage);
     }

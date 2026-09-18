@@ -10,7 +10,7 @@ models/
 __pycache__/
 .venv/
 .pytest_cache/
-tests/.baseline/
+# tests/.baseline/ 不忽略：PSNR 黄金基准图随仓库分发（否则新机器首次跑只能生成后跳过判定）
 
 # 临时产物（统一放仓库根，命名 .tmp-<用途>；含原 .tmp-convert/ 与 .tmp-publish/；见 AGENTS.md）
 *.log
