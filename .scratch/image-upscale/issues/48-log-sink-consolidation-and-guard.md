@@ -44,9 +44,8 @@
 - `iu_log_line` 在 sink 未登记时静默丢弃、绝不退回 stderr 这条契约**没有守卫**：CLI 只能覆盖到
   sink 已登记的路径，未登记分支没有测试缝（要覆盖需 C++ 侧单测缝，本仓库暂无）。
 - `iu_log_sink` ≡ `iu_line_cb`、`iu_path_t` ≡ `path_t` 仍是两份定义；代码审查标准轴建议
-  `iu_log.h` 直接 include `filesystem_utils.h` 复用 `path_t`，本次按维护者选择只留注释锚点。
-- 默认值 `"lanczos"` 仍三处（`SettingsStore.DownFilter` 字段初值、`SettingsStore.Load` 回退、
-  引擎侧 `kDownFilterNames[0]`）：`Load` 回退可改写为 `DownFilterTokens[0]`。
+  `iu_log.h` 直接 include `filesystem_utils.h` 复用 `path_t`，本次按维护者选择只留注释锚点（维护者
+  定案：不做该 include —— 会让日志头反向依赖 FS 工具头并拖进 static 函数）。
 - 模型侧两条 `iu_log_path_error("cannot open model file: ", …)`（param / bin）文案相同，用户分不清
   是哪一份文件打不开；改文案会动对外日志，未做。
 
@@ -56,6 +55,9 @@
   158,051,588 字节，与本地打包字节数一致）。打包冒烟：GUI 启动存活 → WM_CLOSE 优雅退出（退出码 0）
   并写出 `setting.ini`（可见 `LastDownFilter=lanczos`，证实本轮 GUI 助手改动在打包版生效）；用打包
   产物里解出的 `iu_engine.dll` + 包内 `models/` 跑 `digital-art-4x` 4 倍 → 退出码 0、输出 512×512。
+- 2026-09-19 AI：`SettingsStore.Load()` 的降采样默认值字面量 `"lanczos"` 已改为
+  `DownFilterTokens[0]`（等价改动，值不变：表首项即 `"lanczos"`），默认值不再与表内容脱钩；
+  字段初值仍为字面量（静态字段初始化顺序安全，但收益小、未动）。
 - 2026-09-19 AI：由「近期变更简化审查」清单 A 组 4 项 + B5 触发。两轴代码审查（Standards / Spec）
   的报告要点：Standards 无 P0/P1，报告了 CRLF（实测为工作区既有形态、入库仍是 LF，不成立）、两条
   Duplicated Code（judgement）、sink 通路守卫缺口（本轮已补）；Spec 指出 A3 只做一半（:319 仍重复
