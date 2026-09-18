@@ -296,7 +296,7 @@ int RealCUGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                 return process_cpu_se(inimage, outimage);
             if (syncgap == 2)
                 return process_cpu_se_rough(inimage, outimage);
-            // 不可达（engine_core 固定 syncgap=2），且本档缓存网格与 stage2 不一致，启用会静默出坏图。勿启用。
+            // 不可达（engine_core 的 CuganEngine 固定 syncgap=2），且本档缓存网格与 stage2 不一致，启用会静默出坏图。勿启用。
             if (syncgap == 3)
                 return process_cpu_se_very_rough(inimage, outimage);
         }
@@ -316,7 +316,7 @@ int RealCUGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
             return process_se(inimage, outimage);
         if (syncgap == 2)
             return process_se_rough(inimage, outimage);
-        // 不可达（engine_core 固定 syncgap=2），且本档缓存网格与 stage2 不一致，启用会静默出坏图。勿启用。
+        // 同为不可达档位：勿启用（缘由见上方 cpu 分支的说明）
         if (syncgap == 3)
             return process_se_very_rough(inimage, outimage);
     }

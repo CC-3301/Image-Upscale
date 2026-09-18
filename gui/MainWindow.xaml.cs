@@ -319,9 +319,8 @@ public partial class MainWindow : Window
         args.Add(dLvl < 0 ? "auto" : dLvl == 0 ? "none" : dLvl == 1 ? "low" : dLvl == 2 ? "mid" : "high");
 
         // 工单 42：降采样滤镜（只在缩小路径生效；倍率模式下引擎忽略该参数）
-        var dfSel = DownFilterBox.SelectedIndex;
         args.Add("--down-filter");
-        args.Add(SettingsStore.DownFilterTokens[dfSel >= 0 && dfSel < SettingsStore.DownFilterTokens.Length ? dfSel : 0]);
+        args.Add(SettingsStore.DownFilterTokenAt(DownFilterBox.SelectedIndex));
 
         var fmt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString();
         args.Add("-f");
@@ -452,8 +451,7 @@ public partial class MainWindow : Window
         }
 
         // 工单 42：降采样滤镜（与模型无关，引擎缺失时也照样记录）
-        var dfSelSave = DownFilterBox.SelectedIndex;
-        s.DownFilter = SettingsStore.DownFilterTokens[dfSelSave >= 0 && dfSelSave < SettingsStore.DownFilterTokens.Length ? dfSelSave : 0];
+        s.DownFilter = SettingsStore.DownFilterTokenAt(DownFilterBox.SelectedIndex);
 
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
@@ -486,6 +484,11 @@ public class SettingsStore
     // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
     internal static readonly string[] DownFilterTokens = { "lanczos", "catmullrom", "bicubic", "box" };
     internal static readonly string[] DownFilterLabels = { "Lanczos", "Catmull-Rom", "Bicubic", "Box" };
+
+    // 下拉当前选中项 → 引擎 token（未选中/越界回退第 0 项 Lanczos，与引擎侧以 0 为默认一致）
+    internal static string DownFilterTokenAt(int selectedIndex)
+        => DownFilterTokens[selectedIndex >= 0 && selectedIndex < DownFilterTokens.Length ? selectedIndex : 0];
+
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;
     public int WindowTop = int.MinValue;

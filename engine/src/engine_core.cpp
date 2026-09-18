@@ -465,9 +465,6 @@ static std::wstring widen(const std::string& s)
     return std::wstring(s.begin(), s.end());
 }
 
-// 宽字符 → UTF-8（工单 17：%ls 在输出重定向下经 C locale 转为 ANSI 码页（中文 Windows = GBK），
-// GUI 按 UTF-8 解码必乱码；统一显式转 UTF-8 后输出）
-
 // ---- 降采样滤镜（工单 42）：只在“缩小”路径生效；放大一律由多轮模型完成（工单 43）----
 // 名字沿用界面标签（三次卷积家族里 Bicubic/Mitchell/Catmull-Rom 常被混用，本项目里
 // Bicubic = Mitchell-Netravali、Catmull-Rom = 插值型三次卷积）
@@ -1530,19 +1527,14 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     return rc;
 }
 
-// 模型实现（waifu2x / realcugan / realesrgan）经此出口输出：统一走宿主回调，不再直写 stderr（lessons §1.3）
-static void iu_err_sink(const char* utf8_line)
-{
-    if (g_err_cb)
-        g_err_cb(utf8_line, g_user);
-}
-
 IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_line_cb err_cb, void* user)
 {
     g_out_cb = out_cb;
     g_err_cb = err_cb;
     g_user = user;
-    iu_set_log_sink(&iu_err_sink); // 注册共享日志出口（每次 iu_run 都重设，避免悬空回调）
+    // 模型实现（waifu2x / realcugan / realesrgan）的输出也走宿主回调，不再直写 stderr（lessons §1.3）；
+    // 每次 iu_run 都重设，避免悬空回调
+    iu_set_log_sink(g_err_cb, g_user);
 
     // 异常不得逃出导出面：std::filesystem 在权限拒绝 / 内存不足时会抛异常，
     // 逃出 DLL 边界即 std::terminate，会把宿主 GUI 一起带走
