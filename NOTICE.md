@@ -42,4 +42,4 @@ SOFTWARE.
   - **Tencent/ncnn**（BSD 3-Clause，git submodule）
   - **webmproject/libwebp**（BSD 3-Clause，git submodule）
 
-打包模型（models/，不入库）的许可出处见 README.md 的模型清单表。
+打包模型（models/，不入库）的来源与许可见 README.md「模型获取」一节的许可出处表。

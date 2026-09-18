@@ -27,3 +27,4 @@ GUI 标题栏后面应该写上版本号：`Image-Upscale 图像超分` → `Ima
 
 ### 实施记录（2026-09-15）
 - csproj `<Version>0.2.2</Version>`（程序集版本已验证 0.2.2.0）；MainWindow 构造函数运行时拼装 Title=`Image-Upscale 图像超分工具 v0.2.2`；XAML 保留回退值并注释说明。人工：启动看标题栏。
+- 2026-09-18 定案补记（记账一致）：标题最终定案为 `ImageUpscale 图像超分工具 vX.Y.Z`（提交 dac00a8 / 595f6e7，去掉了 `Image-Upscale` 的连字符），版本号唯一来源仍为 csproj `<Version>`。

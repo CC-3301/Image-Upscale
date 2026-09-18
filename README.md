@@ -34,6 +34,15 @@ powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z
 powershell -ExecutionPolicy Bypass -File scripts/fetch-models.ps1
 ```
 
+打包模型（`models/`，不入库）的许可出处（工单 09）：
+
+| 模型（清单 id） | 来源 | 许可 / 再分发 |
+| --- | --- | --- |
+| `waifu2x_upconv_7_art` / `waifu2x_cunet` / `waifu2x_upconv_7_photo` | nihui/waifu2x-ncnn-vulkan release | MIT |
+| `realcugan-pro` / `realcugan-se` | nihui/realcugan-ncnn-vulkan release | MIT |
+| `digital-art-4x` | upscayl/upscayl resources | Upscayl 官方允许再分发 |
+| `realesr-general-x4v3`（含 `-low` / `-mid` / `-high`） | xinntao/Real-ESRGAN v0.2.5.0 权重经 pnnx 转换 | BSD-3 |
+
 ## 使用
 
 解压后运行 `ImageUpscale.exe`：

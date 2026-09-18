@@ -12,6 +12,7 @@
 #include <vector>
 #include <algorithm>
 #include <clocale>
+#include <exception>
 #include <filesystem>
 
 // stb 为头文件库，实现必须在唯一包含点展开
@@ -249,7 +250,7 @@ struct CuganEngine : IEngine
 struct RealesrganEngine : IEngine
 {
     RealESRGAN impl;
-    RealesrganEngine(int gpuid) : impl(gpuid, false) {}
+    RealesrganEngine(int gpuid, int num_threads) : impl(gpuid, num_threads, false) {}
     int load_files(const std::wstring& p, const std::wstring& b) override { return impl.load(p, b); }
     int process(const ncnn::Mat& in, ncnn::Mat& out) const override { return impl.process(in, out); }
     void configure(int scale, int denoise_level, int tilesize, int prepadding) override
@@ -473,7 +474,7 @@ static std::string utf8_from_wide(const std::wstring& w)
     return s;
 }
 
-// ---- 降采样滤镜（工单 42）：只在“缩小”路径生效，放大一律用 Catmull-Rom ----
+// ---- 降采样滤镜（工单 42）：只在“缩小”路径生效；放大一律由多轮模型完成（工单 43）----
 // 名字沿用界面标签（三次卷积家族里 Bicubic/Mitchell/Catmull-Rom 常被混用，本项目里
 // Bicubic = Mitchell-Netravali、Catmull-Rom = 插值型三次卷积）
 enum ResizeFilter
@@ -508,7 +509,7 @@ static float lanczos3_support(float scale, void* user_data)
 // 高质量等比缩放（通道数 1/3/4；输出为 uchar 交错布局）
 // down_filter：仅用于“缩小”（目标尺寸模式的收尾缩放、直通缩放）；
 // 放大已由多轮模型完成（工单 43），这里的非缩小分支只是保底（如收尾尺寸因四舍五入
-// 比模型输出多 1 像素），用 Catmull-Rom。
+// 比模型输出多 1 像素），用 RF_BICUBIC（= Mitchell-Netravali，工单 42 的定名）。
 static bool resize_rgb(const ncnn::Mat& src, ncnn::Mat& dst, int out_w, int out_h, int channels, int down_filter)
 {
     stbir_pixel_layout layout = (stbir_pixel_layout)channels;
@@ -697,7 +698,15 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             fseek(fp, 0, SEEK_END);
             long length = ftell(fp);
             rewind(fp);
-            unsigned char* filedata = (unsigned char*)malloc(length);
+            // ftell / malloc 都必须校验：文件不可定位或内存不足时，
+            // 原先会直接 fread(NULL) 造成访问违例（宿主进程级崩溃）
+            unsigned char* filedata = length > 0 ? (unsigned char*)malloc((size_t)length) : 0;
+            if (!filedata)
+            {
+                fclose(fp);
+                fail(false, "cannot read input", inpath);
+                continue;
+            }
             size_t rd = fread(filedata, 1, length, fp);
             fclose(fp);
 
@@ -741,6 +750,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             unsigned char* rgb = (unsigned char*)malloc((size_t)w * h * 3);
             if (!rgb)
             {
+                free(pixeldata); // OOM 路径同样要释放已解码缓冲
                 fail(false, "out of memory", inpath);
                 continue;
             }
@@ -755,6 +765,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             unsigned char* rgb = flatten_alpha_to_white(pixeldata, w, h);
             if (!rgb)
             {
+                free(pixeldata); // 助手失败时不接管入参，调用方负责释放
                 fail(false, "out of memory", inpath);
                 continue;
             }
@@ -766,6 +777,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             unsigned char* rgb = gray_to_rgb(pixeldata, w, h, c);
             if (!rgb)
             {
+                free(pixeldata); // 同上
                 fail(false, "out of memory", inpath);
                 continue;
             }
@@ -857,7 +869,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                     loaded_denoise = file_denoise;
                     if (verbose)
                     {
-                        log_err("engine loaded scale=%dx prepad=%d\n", s, cur_prepad);
+                        // 工单 06：verbose 要能看出解析出的档位最终落到哪个模型变体文件
+                        log_err("engine loaded scale=%dx denoise=%d prepad=%d\n", s, file_denoise, cur_prepad);
+                        log_err("model variant: %s\n", utf8_from_wide(cur_param).c_str());
                     }
                 }
                 engine->configure(s, file_denoise, tilesize, cur_prepad);
@@ -867,8 +881,10 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                 }
 
                 ncnn::Mat next(cur.w * s, cur.h * s, (size_t)3, 3);
-                if (engine->process(cur, next) != 0)
+                if (engine->process(cur, next) != 0 || next.empty())
                 {
+                    // 各引擎实现内部仍以 return 0 为主（extract 失败不上报），
+                    // 这里补一道出口校验：推理没产出就按失败计，避免静默写出坏图
                     fail(true, "inference failed", inpath);
                     return false;
                 }
@@ -1052,12 +1068,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
     return EXIT_OK;
 }
 
-IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_line_cb err_cb, void* user)
+// 引擎主体：由导出面 iu_run 包裹（异常不得逃出 DLL 边界）
+static int iu_run_impl(int argc, const wchar_t* const* argv)
 {
-    g_out_cb = out_cb;
-    g_err_cb = err_cb;
-    g_user = user;
-
     path_t inputpath;
     path_t model_id = PATHSTR("waifu2x_upconv_7_art");
     path_t models_dir = PATHSTR("models");
@@ -1221,16 +1234,17 @@ IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_li
     }
 
     // ---- 模型清单 ----
-    // 工单 16：models 定位顺序 —— 显式 --models-dir > CWD/models > 引擎目录/models > 引擎上级/models
-    // （GUI 以引擎所在目录为工作目录启动，dist 布局 models 在引擎上一级；CLI 也不再要求必须从 app 目录运行）
+    // 工单 16 / lessons §1.4：models 定位顺序 —— 显式 --models-dir > 引擎目录/models >
+    // 引擎上级/models > CWD/models。exe 优先：CWD 里若有过期清单，不得压过引擎自带的清单；
+    // dist 布局 models 在引擎同级，GUI 以引擎目录为工作目录启动，开发布局两者解析到同一个仓库 models/
     if (!models_dir_given)
     {
         wchar_t exe_buf[MAX_PATH];
         GetModuleFileNameW(NULL, exe_buf, MAX_PATH);
         const std::filesystem::path exe_dir = std::filesystem::path(exe_buf).parent_path();
-        for (const std::wstring& cand : { std::wstring(L"models"),
-                                          (exe_dir / L"models").wstring(),
-                                          (exe_dir / L".." / L"models").wstring() })
+        for (const std::wstring& cand : { (exe_dir / L"models").wstring(),
+                                          (exe_dir / L".." / L"models").wstring(),
+                                          std::wstring(L"models") })
         {
             std::error_code ec;
             if (std::filesystem::exists(cand + PATHSTR("/manifest.conf"), ec))
@@ -1511,7 +1525,7 @@ IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_li
     }
     else // rrdb | compact
     {
-        RealesrganEngine engine(gpuid);
+        RealesrganEngine engine(gpuid, num_threads);
         rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, denoise_per_file,
@@ -1520,4 +1534,33 @@ IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_li
 
     ncnn::destroy_gpu_instance();
     return rc;
+}
+
+IU_API int iu_run(int argc, const wchar_t* const* argv, iu_line_cb out_cb, iu_line_cb err_cb, void* user)
+{
+    g_out_cb = out_cb;
+    g_err_cb = err_cb;
+    g_user = user;
+
+    // 异常不得逃出导出面：std::filesystem 在权限拒绝 / 内存不足时会抛异常，
+    // 逃出 DLL 边界即 std::terminate，会把宿主 GUI 一起带走
+    try
+    {
+        return iu_run_impl(argc, argv);
+    }
+    catch (const std::filesystem::filesystem_error& e)
+    {
+        log_err("filesystem error: %s\n", e.what());
+        return EXIT_IO;
+    }
+    catch (const std::exception& e)
+    {
+        log_err("internal error: %s\n", e.what());
+        return EXIT_INFER;
+    }
+    catch (...)
+    {
+        log_err("internal error: unknown exception\n");
+        return EXIT_INFER;
+    }
 }

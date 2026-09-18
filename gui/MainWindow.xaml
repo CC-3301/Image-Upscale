@@ -4,7 +4,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ImageUpscale 图像超分" Height="660" Width="920"
         MinWidth="780" MinHeight="540"
-        AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver" Closing="OnClosing">
+        AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver" Closing="OnClosing"
+        SizeChanged="OnWindowSizeChanged">
     <Window.Resources>
         <!-- 工单 12：经典主题下控件文字默认顶对齐，显式垂直居中，不依赖系统主题 -->
         <Style TargetType="ComboBox">
@@ -24,9 +25,11 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <!-- 工单 18：分隔条拖动到极限不得把「开始」按钮挤掉 -->
+            <RowDefinition Height="Auto" MinHeight="42"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
+            <!-- 工单 18：日志区（上限 = 60% 窗口高度，由 OnWindowSizeChanged 设定；下限见 GroupBox MinHeight） -->
+            <RowDefinition x:Name="LogRow" Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- 输入（工单 11：可编辑；输入框自身支持拖入） -->

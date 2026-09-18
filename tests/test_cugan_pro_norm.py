@@ -17,16 +17,12 @@ nihui 的 ncnn 移植漏了这对变换（上游 issue #52，至今未修），�
 测试固定 `-g 0`（GPU）：本缺陷在 GPU 上表现最剧烈，也是用户实际路径；无 Vulkan 设备时跳过。
 同夹具下 cugan 的 **CPU 与 GPU 后端会给出完全不同的结果**（各自逐位可复现，官方 ncnn 二进制同样如此）——该现象已核查为非代码逻辑缺陷（真实素材不触发、谁对无定论），不建档、不作为本测试的断言依据。
 """
-import os
-from pathlib import Path
-
 import numpy as np
 import pytest
 from PIL import Image
 
-from conftest import REPO, needs_engine, run_engine
+from conftest import MODELS_DIR, needs_engine, run_engine
 
-MODELS_DIR = Path(os.environ.get("IU_MODELS", REPO / "models"))
 MODEL = "realcugan-pro"
 
 needs_model = pytest.mark.skipif(

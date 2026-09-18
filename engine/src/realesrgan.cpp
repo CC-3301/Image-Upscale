@@ -10,9 +10,11 @@
 #include "realesrgan_preproc_tta.comp.hex.h"
 #include "realesrgan_postproc_tta.comp.hex.h"
 
-RealESRGAN::RealESRGAN(int gpuid, bool _tta_mode)
+RealESRGAN::RealESRGAN(int gpuid, int num_threads, bool _tta_mode)
 {
     // 适配：CPU 路径（-g -1）由 process_cpu 支撑；fp16/int8/sgemm 仅 GPU 启用
+    // 线程数由引擎侧统一传入（原先落到 ncnn 默认值，与 waifu2x/cugan 不一致）
+    net.opt.num_threads = num_threads;
     net.opt.use_vulkan_compute = gpuid != -1;
     net.opt.use_fp16_packed = gpuid != -1;
     net.opt.use_fp16_storage = gpuid != -1;
@@ -34,28 +36,40 @@ RealESRGAN::RealESRGAN(int gpuid, bool _tta_mode)
 
 RealESRGAN::~RealESRGAN()
 {
-    // cleanup preprocess and postprocess pipeline
-    {
-        delete realesrgan_preproc;
-        delete realesrgan_postproc;
-    }
+    release();
+}
+
+// 释放当前已加载的权重与全部管线：析构与 load() 开头共用。
+// ncnn 的 load_param 不清空已有层（逐行追加），旧 Pipeline / Interp 层也会泄漏，
+// 所以「切倍数 / 切降噪档」的重复加载必须先释放。
+void RealESRGAN::release()
+{
+    net.clear();
+
+    delete realesrgan_preproc;
+    realesrgan_preproc = 0;
+    delete realesrgan_postproc;
+    realesrgan_postproc = 0;
 
     if (bicubic_2x)
     {
         bicubic_2x->destroy_pipeline(net.opt);
         delete bicubic_2x;
+        bicubic_2x = 0;
     }
 
     if (bicubic_3x)
     {
         bicubic_3x->destroy_pipeline(net.opt);
         delete bicubic_3x;
+        bicubic_3x = 0;
     }
 
     if (bicubic_4x)
     {
         bicubic_4x->destroy_pipeline(net.opt);
         delete bicubic_4x;
+        bicubic_4x = 0;
     }
 }
 
@@ -65,6 +79,8 @@ int RealESRGAN::load(const std::wstring& parampath, const std::wstring& modelpat
 int RealESRGAN::load(const std::string& parampath, const std::string& modelpath)
 #endif
 {
+    release(); // 切倍数 / 切降噪档的重复加载：先丢掉上一次的权重与管线
+
 #if _WIN32
     {
         FILE* fp = _wfopen(parampath.c_str(), L"rb");
@@ -226,29 +242,15 @@ int RealESRGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
         int in_tile_y0 = std::max(yi * TILE_SIZE_Y - prepadding, 0);
         int in_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y + prepadding, h);
 
+        // use_int8_storage 恒为 false（见构造函数）：int8 分支与 #if _WIN32 两侧同文的重复都已清掉
         ncnn::Mat in;
-        if (opt.use_fp16_storage && opt.use_int8_storage)
+        if (channels == 3)
         {
-            in = ncnn::Mat(w, (in_tile_y1 - in_tile_y0), (unsigned char*)pixeldata + in_tile_y0 * w * channels, (size_t)channels, 1);
+            in = ncnn::Mat::from_pixels(pixeldata + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGB, w, (in_tile_y1 - in_tile_y0));
         }
-        else
+        if (channels == 4)
         {
-            if (channels == 3)
-            {
-#if _WIN32
-                in = ncnn::Mat::from_pixels(pixeldata + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGB, w, (in_tile_y1 - in_tile_y0));
-#else
-                in = ncnn::Mat::from_pixels(pixeldata + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGB, w, (in_tile_y1 - in_tile_y0));
-#endif
-            }
-            if (channels == 4)
-            {
-#if _WIN32
-                in = ncnn::Mat::from_pixels(pixeldata + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGBA, w, (in_tile_y1 - in_tile_y0));
-#else
-                in = ncnn::Mat::from_pixels(pixeldata + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGBA, w, (in_tile_y1 - in_tile_y0));
-#endif
-            }
+            in = ncnn::Mat::from_pixels(pixeldata + in_tile_y0 * w * channels, ncnn::Mat::PIXEL_RGBA, w, (in_tile_y1 - in_tile_y0));
         }
 
         ncnn::VkCompute cmd(net.vulkan_device());
@@ -269,14 +271,7 @@ int RealESRGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
         int out_tile_y1 = std::min((yi + 1) * TILE_SIZE_Y, h);
 
         ncnn::VkMat out_gpu;
-        if (opt.use_fp16_storage && opt.use_int8_storage)
-        {
-            out_gpu.create(w * scale, (out_tile_y1 - out_tile_y0) * scale, (size_t)channels, 1, blob_vkallocator);
-        }
-        else
-        {
-            out_gpu.create(w * scale, (out_tile_y1 - out_tile_y0) * scale, channels, (size_t)4u, 1, blob_vkallocator);
-        }
+        out_gpu.create(w * scale, (out_tile_y1 - out_tile_y0) * scale, channels, (size_t)4u, 1, blob_vkallocator);
 
         for (int xi = 0; xi < xtiles; xi++)
         {
@@ -545,33 +540,17 @@ int RealESRGAN::process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
         {
             ncnn::Mat out;
 
-            if (opt.use_fp16_storage && opt.use_int8_storage)
-            {
-                out = ncnn::Mat(out_gpu.w, out_gpu.h, (unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, (size_t)channels, 1);
-            }
-
             cmd.record_clone(out_gpu, out, opt);
 
             cmd.submit_and_wait();
 
-            if (!(opt.use_fp16_storage && opt.use_int8_storage))
+            if (channels == 3)
             {
-                if (channels == 3)
-                {
-#if _WIN32
-                    out.to_pixels((unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, ncnn::Mat::PIXEL_RGB);
-#else
-                    out.to_pixels((unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, ncnn::Mat::PIXEL_RGB);
-#endif
-                }
-                if (channels == 4)
-                {
-#if _WIN32
-                    out.to_pixels((unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, ncnn::Mat::PIXEL_RGBA);
-#else
-                    out.to_pixels((unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, ncnn::Mat::PIXEL_RGBA);
-#endif
-                }
+                out.to_pixels((unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, ncnn::Mat::PIXEL_RGB);
+            }
+            if (channels == 4)
+            {
+                out.to_pixels((unsigned char*)outimage.data + yi * scale * TILE_SIZE_Y * w * scale * channels, ncnn::Mat::PIXEL_RGBA);
             }
         }
     }
@@ -680,8 +659,11 @@ int RealESRGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                 {
                     for (int j = 0; j < out_w; j++)
                     {
+                        // full 只有 RGB 三通道（CPU 路径的 alpha 由引擎侧的 bicubic 合并另行处理），
+                        // 故 q>=3 时不能读 full[..*3+3]（那是下一个像素的 R，末像素还会越界 1 字节）
+                        const size_t si = (size_t)(out_y0 + i) * out_f32.w * 3 + (size_t)(out_x0 + j) * 3;
                         uptr[(size_t)i * w * scale * channels + (size_t)j * channels] =
-                            full[(size_t)(out_y0 + i) * out_f32.w * 3 + (out_x0 + j) * 3 + q];
+                            full[si + (q < 3 ? q : 2)];
                     }
                 }
             }

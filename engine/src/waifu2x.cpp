@@ -24,16 +24,26 @@ Waifu2x::Waifu2x(int gpuid, bool _tta_mode, int num_threads)
 
 Waifu2x::~Waifu2x()
 {
-    // cleanup preprocess and postprocess pipeline
-    {
-        delete waifu2x_preproc;
-        delete waifu2x_postproc;
-    }
+    release();
+}
+
+// 释放当前已加载的权重与全部管线：析构与 load() 开头共用。
+// ncnn 的 load_param 不清空已有层（逐行追加），旧 Pipeline / Interp 层也会泄漏，
+// 所以「切倍数 / 切降噪档」的重复加载必须先释放。
+void Waifu2x::release()
+{
+    net.clear();
+
+    delete waifu2x_preproc;
+    waifu2x_preproc = 0;
+    delete waifu2x_postproc;
+    waifu2x_postproc = 0;
 
     if (bicubic_2x)
     {
         bicubic_2x->destroy_pipeline(net.opt);
         delete bicubic_2x;
+        bicubic_2x = 0;
     }
 }
 
@@ -43,6 +53,8 @@ int Waifu2x::load(const std::wstring& parampath, const std::wstring& modelpath)
 int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
 #endif
 {
+    release(); // 切倍数 / 切降噪档的重复加载：先丢掉上一次的权重与管线
+
     net.opt.use_vulkan_compute = vkdev ? true : false;
     net.opt.use_fp16_packed = true;
     net.opt.use_fp16_storage = true;

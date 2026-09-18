@@ -1,3 +1,4 @@
+# 【历史存档，勿运行】一次性迁移脚本：目标为 main.cpp 时代的代码（已并入 engine_core.cpp）。
 # --models-dir 支持（带断言验证，全部成功才写盘）
 p = "engine/src/main.cpp"
 t = open(p, encoding="utf-8").read()

@@ -46,3 +46,4 @@
 - 发布验证：`dotnet publish -r win-x64` 产物仅 ImageUpscale.exe（DLL 已收编）；实跑 GUI 确认 `%TEMP%\.net\ImageUpscale\<hash>\iu_engine.dll` 自动解压加载
 - package.ps1：新布局 + 三道守卫（包根无散装 iu_engine.dll / 无 pdb / 仅一个 ImageUpscale.exe）
 - 文档：ADR-0002（本决策）、ADR-0001 状态注记、spec 架构与测试缝更新、README 去 CLI 字眼
+- 2026-09-18 定案补记（记账一致）：包根内容以维护者 v0.2.4 定案为准 —— 仅 `ImageUpscale.exe` + `models/` + `NOTICE.md`（MIT 许可已并入 `NOTICE.md`，README 不随包分发），与本工单验收里的「LICENSE + README.md」不同。

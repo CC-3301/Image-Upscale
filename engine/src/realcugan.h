@@ -80,6 +80,9 @@ private:
     ncnn::Layer* bicubic_3x;
     ncnn::Layer* bicubic_4x;
     bool tta_mode;
+
+    // 释放当前已加载的权重与全部管线（load() 开头与析构共用）
+    void release();
 };
 
 #endif // REALCUGAN_H

@@ -54,7 +54,7 @@ def test_missing_model_files_is_infer_error(workdir):
         "scale 2\nprepad 7\nin Input1\nout Eltwise4\n"
         "denoise none 0\ndenoise low 1\ndenoise mid 2\ndenoise high 3\n",
         encoding="utf-8")
-    p = run_engine(["-i", inp, "-m", "ghost", "-g", "-1"], cwd=workdir)
+    p = run_engine(["-i", inp, "-m", "ghost", "--models-dir", md, "-g", "-1"])
     assert p.returncode == 2
 
 

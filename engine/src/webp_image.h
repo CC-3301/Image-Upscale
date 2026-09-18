@@ -24,7 +24,9 @@ unsigned char* webp_load(const unsigned char* buffer, int len, int* w, int* h, i
     int height = config.input.height;
     int channels = config.input.has_alpha ? 4 : 3;
 
-    pixeldata = (unsigned char*)malloc(width * height * channels);
+    pixeldata = (unsigned char*)malloc((size_t)width * height * channels);
+    if (!pixeldata)
+        return NULL;
 
     config.output.colorspace = channels == 4 ? MODE_RGBA : MODE_RGB;
 
@@ -85,7 +87,9 @@ int webp_save(const char* filepath, int w, int h, int c, const unsigned char* pi
     if (!fp)
         goto RETURN;
 
-    fwrite(output, 1, length, fp);
+    // 写盘失败不能报成功（原实现忽略 fwrite 返回值 → 编码“成功”但文件残缺）
+    if (fwrite(output, 1, length, fp) != length)
+        goto RETURN;
 
     ret = 1;
 

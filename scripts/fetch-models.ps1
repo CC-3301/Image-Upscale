@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 
 $repo = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $modelsDir = Join-Path $repo 'models'
-$tmpDir = 'D:\tmp\image-upscale-setup'
+# 临时工作目录：用系统临时目录（原先硬编码盘符，换机器/无 D 盘即失效）
+$tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) 'image-upscale-setup'
 New-Item -ItemType Directory -Force -Path $modelsDir, $tmpDir | Out-Null
 
 function Get-ReleaseAsset($repo, $pattern) {

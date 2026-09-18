@@ -40,6 +40,9 @@ private:
     ncnn::Pipeline* waifu2x_postproc;
     ncnn::Layer* bicubic_2x;
     bool tta_mode;
+
+    // 释放当前已加载的权重与全部管线（load() 开头与析构共用）
+    void release();
 };
 
 #endif // WAIFU2X_H

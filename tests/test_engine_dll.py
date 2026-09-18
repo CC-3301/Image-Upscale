@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from conftest import REPO, make_png
+from conftest import MODELS_DIR, REPO, make_png, needs_engine, run_engine
 
 DLL = Path(os.environ.get("IU_ENGINE_DLL", REPO / "bld" / "iu_engine.dll"))
-MODELS = REPO / "models"
+MODELS = MODELS_DIR  # 统一从 conftest 取（IU_MODELS 可覆盖）
 
 needs_dll = pytest.mark.skipif(not DLL.exists(), reason="iu_engine.dll not built")
 

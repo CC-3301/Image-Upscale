@@ -1,11 +1,9 @@
 """工单 02：完整尺寸模式（目标尺寸互斥 + 直通缩放）"""
-import math
-
 import numpy as np
 import pytest
 from PIL import Image
 
-from conftest import make_png, needs_engine, run_engine
+from conftest import make_png, needs_engine, psnr as _psnr, run_engine
 
 
 @needs_engine
@@ -178,12 +176,6 @@ def _make_fine_png(path, size=(48, 32)):
             px[x, y] = (v, v, v)
     img.save(path)
 
-
-def _psnr(a, b):
-    aa = a.astype("float64")
-    bb = b.astype("float64")
-    mse = ((aa - bb) ** 2).mean()
-    return 99.0 if mse == 0 else 10 * math.log10(255.0 * 255.0 / mse)
 
 
 @needs_engine

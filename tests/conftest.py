@@ -1,8 +1,10 @@
+import math
 import os
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -23,21 +25,47 @@ def _resolve_engine():
 
 ENGINE = _resolve_engine()
 MODEL = os.environ.get("IU_MODEL", "waifu2x_upconv_7_art")
+# 模型目录：与引擎同样的优先序（显式环境变量 > 仓库 models/）；各测试统一从这里取
+MODELS_DIR = Path(os.environ.get("IU_MODELS", REPO / "models"))
 
 needs_engine = pytest.mark.skipif(not ENGINE.exists(), reason="engine exe not built")
 
 
+def _skip_reason(report):
+    """从 skip report 里取出原因（skipif 的 longrepr 是 (file, line, reason) 三元组）"""
+    lr = getattr(report, "longrepr", "")
+    if isinstance(lr, tuple) and len(lr) >= 3:
+        return str(lr[2])
+    return str(getattr(report, "reason", "")) or str(lr)
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
-    """防空绿：引擎缺失时全部用例被 skip，pytest 仍退出 0。会话末尾显式告警，别把没跑读成通过。"""
-    if ENGINE.exists():
-        return
-    skipped = [r for r in terminalreporter.stats.get("skipped", []) if "engine exe not built" in str(r.longrepr)]
+    """防空绿：被跳过的用例必须在会话末尾显式可见，否则「没跑」会被读成「通过」。
+
+    三类会产生 skip：引擎未构建、PSNR 基准首次生成、模型未下载（fetch-models 未跑）。
+    """
+    skipped = terminalreporter.stats.get("skipped", [])
     if not skipped:
         return
-    terminalreporter.write_sep("=", "警告：引擎未构建，测试未真正执行", red=True, bold=True)
-    terminalreporter.write_line(f"引擎路径不存在：{ENGINE}")
-    terminalreporter.write_line(f"被跳过：{len(skipped)} 个用例 —— 本次全绿不代表通过")
-    terminalreporter.write_line("先构建引擎（scripts\\engine-build.bat），或设 IU_ENGINE 指向 image-upscale.exe")
+    if ENGINE.exists():
+        terminalreporter.write_sep("=", f"注意：{len(skipped)} 个用例被跳过", yellow=True, bold=True)
+    else:
+        terminalreporter.write_sep("=", "警告：引擎未构建，测试未真正执行", red=True, bold=True)
+        terminalreporter.write_line(f"引擎路径不存在：{ENGINE}")
+        terminalreporter.write_line("先构建引擎（scripts\\engine-build.bat），或设 IU_ENGINE 指向 image-upscale.exe")
+    terminalreporter.write_line(f"被跳过：{len(skipped)} 个用例 —— 本次全绿不代表这些用例通过")
+    for report in skipped[:10]:
+        terminalreporter.write_line(f"  · {report.nodeid}：{_skip_reason(report)}")
+    if len(skipped) > 10:
+        terminalreporter.write_line(f"  · ……另有 {len(skipped) - 10} 个")
+
+
+def psnr(a, b):
+    """PSNR（dB）：入参可为 PIL.Image 或 numpy 数组；mse==0 时返回 99.0 作上限哨兵"""
+    aa = np.asarray(a.convert("RGB") if hasattr(a, "convert") else a, dtype=np.float64)
+    bb = np.asarray(b.convert("RGB") if hasattr(b, "convert") else b, dtype=np.float64)
+    mse = ((aa - bb) ** 2).mean()
+    return 99.0 if mse == 0 else 10 * math.log10(255.0 * 255.0 / mse)
 
 
 def run_engine(args, cwd=None):

@@ -42,7 +42,7 @@ static int list_directory(const path_t& dirpath, std::vector<path_t>& imagepaths
     _WDIR* dir = _wopendir(dirpath.c_str());
     if (!dir)
     {
-        fwprintf(stderr, L"opendir failed %ls\n", dirpath.c_str());
+        // 不在此直接打印：宽字符路径经 stderr 输出会乱码，且绕过引擎回调（lessons §1.3）
         return -1;
     }
 
@@ -76,7 +76,7 @@ static int list_directory(const path_t& dirpath, std::vector<path_t>& imagepaths
     DIR* dir = opendir(dirpath.c_str());
     if (!dir)
     {
-        fprintf(stderr, "opendir failed %s\n", dirpath.c_str());
+        // 同上：不绕过引擎回调直接打印
         return -1;
     }
 

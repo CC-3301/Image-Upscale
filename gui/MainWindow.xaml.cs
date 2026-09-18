@@ -33,7 +33,7 @@ public partial class MainWindow : Window
 {
     private string _modelsDir;
     private List<ModelEntry> _models = new();
-    private Process _running;
+    // 并发保护就是 StartButton.IsEnabled（工单 27 后引擎在进程内同步跑，没有可等待的 Process 对象）
 
     // 工单 20：ETA 估算
     private readonly Stopwatch _etaStopwatch = new();
@@ -99,7 +99,7 @@ public partial class MainWindow : Window
         RestoreSettings(s);
         // 工单 37：窗口几何已改在构造函数显示前恢复，此处不再重复
 
-        Log($"就绪，已加载 {_models.Count} 个模型");  // 工单 33：启动完成后日志只此一条
+        Log($"引擎就绪，已加载 {_models.Count} 个模型");  // 工单 33：启动完成后日志只此一条
     }
 
     // 恢复尺寸模式 / 倍率 / 宽高 / 格式 / 质量（模型选择已完成，OnModelChanged 已跑过）
@@ -132,6 +132,13 @@ public partial class MainWindow : Window
         QualityInput.Text = q.ToString();
     }
 
+    // 工单 18：日志区高度上限 = 窗口可用高度的 60%（下限由 XAML MinHeight 保证；
+    //「开始」行的下限由 StartRow 的 MinHeight=42 保证，拖到极限不会把按钮挤掉）
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        LogRow.MaxHeight = Math.Max(80, e.NewSize.Height * 0.6);
+    }
+
     // ---- 工单 25：恢复窗口几何（逐项校验，与 setting.ini 其余项同款静默回退语义）----
     private void RestoreWindowBounds(SettingsStore s)
     {
@@ -142,7 +149,9 @@ public partial class MainWindow : Window
             Height = s.WindowHeight;
         }
 
-        // 位置：与虚拟屏幕有交集且未超出屏幕才采用（拔显示器/改分辨率防丢窗口），否则保持系统默认位
+        // 位置：与虚拟屏幕有交集且未超出屏幕才采用（拔显示器/改分辨率防丢窗口）；
+        // 否则回退为屏幕居中（工单 25 的「回退居中」，原先保持系统默认位）
+        bool positionRestored = false;
         if (s.WindowLeft != int.MinValue && s.WindowTop != int.MinValue)
         {
             var vs = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
@@ -152,8 +161,11 @@ public partial class MainWindow : Window
             {
                 Left = s.WindowLeft;
                 Top = s.WindowTop;
+                positionRestored = true;
             }
         }
+        if (!positionRestored)
+            WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen;
 
         // 最大化：恢复尺寸/位置后再置状态（最大化时 Left/Top 不可信，还原态坐标已先行设置）
         if (s.WindowMaximized == 1)
@@ -278,12 +290,6 @@ public partial class MainWindow : Window
             MessageBox.Show("请先选择有效的输入文件或文件夹", "提示");
             return;
         }
-        if (_running != null)
-        {
-            MessageBox.Show("已有任务在运行", "提示");
-            return;
-        }
-
         var m = _models[ModelBox.SelectedIndex];
         // 工单 27：参数走数组（P/Invoke wchar_t**），无需引号转义；--models-dir 由 GUI 显式传入
         var args = new List<string> { "-i", input, "-m", m.Id, "--models-dir", _modelsDir };
@@ -402,7 +408,6 @@ public partial class MainWindow : Window
             }));
 
         StartButton.IsEnabled = true;
-        _running = null;
         _etaStopwatch.Stop();
 
         // 工单 15：异常退出码（如 0xC0000005）翻译为崩溃提示
@@ -476,7 +481,7 @@ public class SettingsStore
     public int ScaleHeight;
     public string OutputExt = "jpg";
     public int OutputQuality = -1;     // -1 = 无记录
-    // 工单 42：降采样滤镜 token（lanczos/bicubic/mitchell/bspline/box）
+    // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）
     public string DownFilter = "lanczos";
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;

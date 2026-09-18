@@ -73,28 +73,43 @@ RealCUGAN::RealCUGAN(int gpuid, bool _tta_mode, int num_threads)
 
 RealCUGAN::~RealCUGAN()
 {
-    // cleanup preprocess and postprocess pipeline
-    {
-        delete realcugan_preproc;
-        delete realcugan_postproc;
-    }
+    release();
+}
+
+// 释放当前已加载的权重与全部管线：析构与 load() 开头共用。
+// ncnn 的 load_param 不清空已有层（逐行追加），旧 Pipeline / Interp 层也会泄漏，
+// 所以「切倍数 / 切降噪档」的重复加载必须先释放。
+// 另：4x postproc 原先漏在析构之外（工单 44-47 审查发现的内存泄漏）。
+void RealCUGAN::release()
+{
+    net.clear();
+
+    delete realcugan_preproc;
+    realcugan_preproc = 0;
+    delete realcugan_postproc;
+    realcugan_postproc = 0;
+    delete realcugan_4x_postproc;
+    realcugan_4x_postproc = 0;
 
     if (bicubic_2x)
     {
         bicubic_2x->destroy_pipeline(net.opt);
         delete bicubic_2x;
+        bicubic_2x = 0;
     }
 
     if (bicubic_3x)
     {
         bicubic_3x->destroy_pipeline(net.opt);
         delete bicubic_3x;
+        bicubic_3x = 0;
     }
 
     if (bicubic_4x)
     {
         bicubic_4x->destroy_pipeline(net.opt);
         delete bicubic_4x;
+        bicubic_4x = 0;
     }
 }
 
@@ -104,6 +119,8 @@ int RealCUGAN::load(const std::wstring& parampath, const std::wstring& modelpath
 int RealCUGAN::load(const std::string& parampath, const std::string& modelpath)
 #endif
 {
+    release(); // 切倍数 / 切降噪档的重复加载：先丢掉上一次的权重与管线
+
     net.opt.use_vulkan_compute = vkdev ? true : false;
     net.opt.use_fp16_packed = true;
     net.opt.use_fp16_storage = vkdev ? true : false;
@@ -1006,7 +1023,9 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                                     float v = (*ptr0++ + *ptr1++ + *ptr2-- + *ptr3-- + *ptr4 + *ptr5 + *ptr6 + *ptr7) / 8;
 
-                                    *outptr++ = denorm_out(v) + 0.5f + inptr[j / 4] * 255.f;
+                                    // 与 GPU 的 4x postproc 同式：残差在归一化域相加后再反归一化。
+                                    // 原式 denorm_out(v) + inptr*255 在 pro 权重上是错的（inptr 已是归一化值）
+                                    *outptr++ = denorm_out(v + inptr[j / 4]) + 0.5f;
                                 }
                             }
                         }
@@ -1136,7 +1155,8 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                                 for (int j = 0; j < out.w; j++)
                                 {
-                                    *outptr++ = denorm_out(*ptr++) + 0.5f + inptr[j / 4] * 255.f;
+                                    // 同上（非 TTA 路径）：残差在归一化域相加后再反归一化
+                                    *outptr++ = denorm_out(*ptr++ + inptr[j / 4]) + 0.5f;
                                 }
                             }
                         }
@@ -3201,7 +3221,9 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                                     float v = (*ptr0++ + *ptr1++ + *ptr2-- + *ptr3-- + *ptr4 + *ptr5 + *ptr6 + *ptr7) / 8;
 
-                                    *outptr++ = denorm_out(v) + 0.5f + inptr[j / 4] * 255.f;
+                                    // 与 GPU 的 4x postproc 同式：残差在归一化域相加后再反归一化。
+                                    // 原式 denorm_out(v) + inptr*255 在 pro 权重上是错的（inptr 已是归一化值）
+                                    *outptr++ = denorm_out(v + inptr[j / 4]) + 0.5f;
                                 }
                             }
                         }
@@ -3339,7 +3361,8 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                                 for (int j = 0; j < out.w; j++)
                                 {
-                                    *outptr++ = denorm_out(*ptr++) + 0.5f + inptr[j / 4] * 255.f;
+                                    // 同上（非 TTA 路径）：残差在归一化域相加后再反归一化
+                                    *outptr++ = denorm_out(*ptr++ + inptr[j / 4]) + 0.5f;
                                 }
                             }
                         }

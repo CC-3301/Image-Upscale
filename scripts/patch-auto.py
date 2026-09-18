@@ -1,3 +1,5 @@
+# 【历史存档，勿运行】工单 06 的一次性迁移脚本：目标是 main.cpp 时代的代码（已并入 engine_core.cpp）。
+# 现在跑只会静默 no-op（replace 锚点已不存在）却仍打印 "patches applied"，保留仅供追溯。
 # 工单 06：AUTO 降噪（估计器 + CLI/命名集成）
 import re
 

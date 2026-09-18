@@ -1,22 +1,12 @@
 """推理正确性：CPU 后端确定性 + PSNR 容差；灰度输入转换"""
 import os
 
-import numpy as np
 import pytest
 from PIL import Image
 
-from conftest import REPO, make_gray_jpg, make_png, needs_engine, run_engine, MODEL
+from conftest import MODELS_DIR, REPO, make_gray_jpg, make_png, needs_engine, psnr, run_engine, MODEL
 
 BASELINE = REPO / "tests" / ".baseline"
-
-
-def _psnr(a: Image.Image, b: Image.Image) -> float:
-    aa = np.asarray(a.convert("RGB"), dtype=np.float64)
-    bb = np.asarray(b.convert("RGB"), dtype=np.float64)
-    mse = np.mean((aa - bb) ** 2)
-    if mse == 0:
-        return 99.0
-    return 10 * np.log10(255.0 * 255.0 / mse)
 
 
 @needs_engine
@@ -32,13 +22,15 @@ def test_cpu_2x_dimensions_and_psrn(workdir):
 
     baseline_path = BASELINE / "cpu_2x.png"
     if not baseline_path.exists():
-        # 首次运行：建立基准
+        # 首次运行：建立基准。基准是「人工确认过的黄金参考」，无法自动判定，
+        # 所以本次只生成、不判定通过（原先自动生成 + 不断言 → 新机器上永远全绿）
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(baseline_path)
-    else:
-        # 后续运行：PSNR 容差断言（不逐像素相等）
-        ref = Image.open(baseline_path)
-        assert _psnr(img, ref) >= 30.0
+        pytest.skip(f"PSNR 基准首次生成 {baseline_path}：人工确认输出无误后重跑本用例才算通过")
+
+    # 后续运行：PSNR 容差断言（不逐像素相等）
+    ref = Image.open(baseline_path)
+    assert psnr(img, ref) >= 30.0
 
 
 @needs_engine

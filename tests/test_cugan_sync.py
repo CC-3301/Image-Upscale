@@ -10,16 +10,12 @@ Real-CUGAN 的 SE（squeeze-excitation）描述子是**全图**平均量，所�
 断言两者不应相差到「灾难级」——同步档位正确时差值来自分块拼接的边界误差，
 档位 3 时整幅图都是彩色噪声。
 """
-import os
-from pathlib import Path
-
 import numpy as np
 import pytest
 from PIL import Image
 
-from conftest import REPO, needs_engine, run_engine
+from conftest import MODELS_DIR, needs_engine, run_engine
 
-MODELS_DIR = Path(os.environ.get("IU_MODELS", REPO / "models"))
 MODEL = "realcugan-pro"
 
 needs_model = pytest.mark.skipif(

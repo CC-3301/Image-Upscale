@@ -67,3 +67,4 @@ zip 解压后结构臃肿：只需要中文，却包含 cs、de、es、fr、it�
 - 新布局下 GUI 以 engine/ 为引擎工作目录启动，而引擎按 CWD 找 manifest → "cannot read models/manifest.conf"（打包冒烟从包根跑恰好未复刻 GUI 场景）
 - 修复：models 定位顺序 = 显式 --models-dir > CWD/models > 引擎目录/models > 引擎上级/models；manifest 跟随同一 models_dir；parse_manifest 改 _wfopen（宽字符，兼容中文安装路径）
 - 回归测试 2 个（dist 布局模拟 + 显式 --models-dir 优先）；包 v0.2.1 已含修复，CWD=engine/ 冒烟 ✅
+- 2026-09-18 定案补记（记账一致）：本工单的 `engine/` 子目录便携布局已被工单 27 取代（引擎以 `iu_engine.dll` 收编进单文件 exe），`engine/` 目录不再存在。

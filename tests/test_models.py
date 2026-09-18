@@ -2,7 +2,7 @@
 import pytest
 from PIL import Image
 
-from conftest import REPO, make_png, needs_engine, run_engine
+from conftest import MODELS_DIR, REPO, make_png, needs_engine, run_engine
 
 
 def _smoke(workdir, model, scale):
@@ -91,8 +91,11 @@ def test_models_resolved_relative_to_engine_exe(tmp_path, workdir):
     engine_dir.mkdir()
     engine_copy = engine_dir / "image-upscale.exe"
     shutil.copy2(ENGINE, engine_copy)
+    # 必须连 iu_engine.dll 一起复制：否则进程在加载导入表时就失败（0xC000013B）——
+    # 什么都读不到、stderr 为空，旧版弱断言（只查某错误串不在 stderr）会因此假绿
+    shutil.copy2(ENGINE.parent / "iu_engine.dll", engine_dir / "iu_engine.dll")
     (tmp_path / "models").mkdir()
-    shutil.copy(REPO / "models" / "manifest.conf", tmp_path / "models" / "manifest.conf")
+    shutil.copy(MODELS_DIR / "manifest.conf", tmp_path / "models" / "manifest.conf")
 
     # GUI 以 engine/ 子目录作为引擎工作目录（MainWindow 传 WorkingDirectory=引擎所在目录），
     # 输入不存在时若清单解析成功会推进到输入校验（"input file not readable"）；
@@ -100,6 +103,9 @@ def test_models_resolved_relative_to_engine_exe(tmp_path, workdir):
     p = subprocess.run(
         [str(engine_copy), "-i", str(workdir / "no-such.png"), "-m", "waifu2x_upconv_7_art", "-g", "-1"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=engine_dir)
+    # 正反两面都断言：清单确实被读到（推进到输入校验），而不是「只是没报那句错」
+    assert p.returncode == 3, (p.returncode, p.stderr)
+    assert "input file not readable" in p.stderr, p.stderr
     assert "cannot read models/manifest.conf" not in p.stderr, p.stderr
 
 
@@ -112,19 +118,22 @@ def test_explicit_models_dir_wins(tmp_path, workdir):
 
     alt = tmp_path / "alt-models"
     alt.mkdir()
-    shutil.copy(REPO / "models" / "manifest.conf", alt / "manifest.conf")
+    shutil.copy(MODELS_DIR / "manifest.conf", alt / "manifest.conf")
 
     # CWD=repo 根（models/ 可用）但显式指定 alt：清单应从 alt 读（同样推进到输入校验）
     p = subprocess.run(
         [str(ENGINE), "-i", str(workdir / "no-such.png"), "-m", "waifu2x_upconv_7_art",
          "--models-dir", str(alt), "-g", "-1"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=REPO)
+    # 同上：显式 --models-dir 时清单从该目录读，且必须推进到输入校验
+    assert p.returncode == 3, (p.returncode, p.stderr)
+    assert "input file not readable" in p.stderr, p.stderr
     assert "cannot read models/manifest.conf" not in p.stderr, p.stderr
 
 
 # ---- 工单 46/47 回归：权重损坏要报失败；Real-ESRGAN 不得刷调试输出 ----
 
-MODEL_BIN = REPO / "models" / "waifu2x_upconv_7_art" / "noise0_scale2.0x_model.bin"
+MODEL_BIN = MODELS_DIR / "waifu2x_upconv_7_art" / "noise0_scale2.0x_model.bin"
 MODEL_PARAM = MODEL_BIN.with_suffix(".param")
 needs_model = pytest.mark.skipif(not MODEL_BIN.exists(), reason="模型未下载（scripts/fetch-models.ps1）")
 
@@ -142,7 +151,7 @@ def test_corrupt_weight_file_is_inference_error(tmp_path, workdir, corrupt):
 
     alt = tmp_path / "models"
     (alt / "waifu2x_upconv_7_art").mkdir(parents=True)
-    shutil.copy(REPO / "models" / "manifest.conf", alt / "manifest.conf")
+    shutil.copy(MODELS_DIR / "manifest.conf", alt / "manifest.conf")
     alt_param = alt / "waifu2x_upconv_7_art" / MODEL_PARAM.name
     # 两种情形都把真 .bin 放到位：否则旧代码会在「bin 打不开」处返回 -1，
     # 即使有 bug 也会绿（那样测的是缺文件，不是「返回值被丢弃」）
@@ -158,6 +167,55 @@ def test_corrupt_weight_file_is_inference_error(tmp_path, workdir, corrupt):
     inp = workdir / "in.png"
     make_png(inp, size=(48, 32))
     p = run_engine(["-i", inp, "-m", "waifu2x_upconv_7_art", "--models-dir", alt, "-f", "png", "-g", "-1"])
+    assert p.returncode == 2, (p.returncode, p.stderr)
+    assert "model load failed" in p.stderr, p.stderr
+
+
+@needs_engine
+def test_verbose_reports_resolved_model_variant(workdir):
+    """工单 06：verbose 要给出「解析档位 → 模型变体文件」的落点（原先只输出档位数字）"""
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = run_engine(["-i", inp, "-m", "waifu2x_cunet", "--denoise", "mid", "-f", "png", "-g", "-1", "-v"])
+    assert p.returncode == 0, p.stderr
+    assert "engine loaded scale=2x denoise=2" in p.stderr, p.stderr
+    # mid 档在 waifu2x 清单里映射到 token 2 → noise2_scale2.0x_model.param
+    assert "noise2_scale2.0x_model.param" in p.stderr, p.stderr
+
+
+@needs_engine
+def test_engine_relative_models_wins_over_cwd(tmp_path, workdir):
+    """工单 16 / lessons §1.4：定位顺序为 exe 目录 > exe 上级 > CWD。
+
+    构造：exe 上一级（tmp/models）放一张含 ghost 的清单，CWD（tmp/cwd/models）放真实清单。
+    `-m ghost` 若解析到 exe 侧 → 模型文件缺失 → EXIT_INFER(2)；
+    若被 CWD 压过 → unknown model id → EXIT_PARAM(1)。
+    """
+    import shutil
+    import subprocess
+    from conftest import ENGINE
+
+    engine_dir = tmp_path / "engine"
+    engine_dir.mkdir()
+    shutil.copy2(ENGINE, engine_dir / "image-upscale.exe")
+    shutil.copy2(ENGINE.parent / "iu_engine.dll", engine_dir / "iu_engine.dll")
+
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "manifest.conf").write_text(
+        "model ghost\ndisplay ghost\ngroup manga\narch waifu2x\ndir ghost\n"
+        "scale 2\nprepad 7\nin Input1\nout Eltwise4\n"
+        "denoise none 0\ndenoise low 1\ndenoise mid 2\ndenoise high 3\n",
+        encoding="utf-8")
+
+    cwd = tmp_path / "cwd"
+    (cwd / "models").mkdir(parents=True)
+    shutil.copy(MODELS_DIR / "manifest.conf", cwd / "models" / "manifest.conf")
+
+    inp = workdir / "in.png"
+    make_png(inp, size=(48, 32))
+    p = subprocess.run(
+        [str(engine_dir / "image-upscale.exe"), "-i", str(inp), "-m", "ghost", "-g", "-1"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd)
     assert p.returncode == 2, (p.returncode, p.stderr)
     assert "model load failed" in p.stderr, p.stderr
 

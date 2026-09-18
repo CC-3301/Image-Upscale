@@ -249,10 +249,15 @@ target_compile_options(image-upscale PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
 )
 
-option(IU_ENABLE_ASAN "build everything with AddressSanitizer" OFF)
+option(IU_ENABLE_ASAN "对本项目两个目标启用 AddressSanitizer（不含 third_party）" OFF)
 if(IU_ENABLE_ASAN)
-    add_compile_options(/fsanitize=address)
-    add_link_options(/fsanitize=address)
+    # 必须用 target_* 形式：add_compile_options / add_link_options 只影响其之后创建的目标，
+    # 而 iu_engine 与 image-upscale 都在本块之前就已创建（原实现等于开关空转）
+    # 注意：ASAN 与静态 CRT（/MT）不兼容，需要时另行调整
+    foreach(_iu_tgt iu_engine image-upscale)
+        target_compile_options(${_iu_tgt} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/fsanitize=address>)
+        target_link_options(${_iu_tgt} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/fsanitize=address>)
+    endforeach()
 endif()
 
 target_link_libraries(iu_engine PRIVATE
