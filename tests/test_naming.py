@@ -13,7 +13,7 @@ def test_single_file_default_jpg_naming(workdir):
     make_png(inp)
     p = run_engine(["-i", inp, "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / f"photo-{MODEL_TAG}-2.0x.jpg"
+    out = workdir / f"photo-{MODEL_TAG}-n0-2.0x.jpg"
     assert out.exists()
     assert Image.open(out).size == (128, 128)
 
@@ -30,7 +30,7 @@ def test_single_file_explicit_png_format(workdir):
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    out = workdir / f"A-{MODEL_TAG}-2.0x.png"
+    out = workdir / f"A-{MODEL_TAG}-n0-2.0x.png"
     assert out.exists()
     with open(out, "rb") as f:
         assert f.read(8) == b"\x89PNG\r\n\x1a\n"
@@ -46,7 +46,7 @@ def test_folder_input_sibling_folder_naming(workdir):
     p = run_engine(["-i", folder, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
 
-    outdir = workdir / f"manga-{MODEL_TAG}-2.0x"
+    outdir = workdir / f"manga-{MODEL_TAG}-n0-2.0x"
     assert outdir.is_dir()
     assert (outdir / "p001.png").exists()
     assert (outdir / "p002.png").exists()
@@ -62,7 +62,7 @@ def test_folder_skips_non_image_files(workdir):
     (folder / "readme.txt").write_text("hello", encoding="utf-8")
     p = run_engine(["-i", folder, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    outdir = workdir / f"sk-{MODEL_TAG}-2.0x"
+    outdir = workdir / f"sk-{MODEL_TAG}-n0-2.0x"
     assert (outdir / "a.png").exists()
     assert not (outdir / "readme.txt").exists()
 
@@ -73,7 +73,7 @@ def test_overwrite_on_rerun(workdir):
     make_png(inp)
     p1 = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p1.returncode == 0
-    out = workdir / f"A-{MODEL_TAG}-2.0x.png"
+    out = workdir / f"A-{MODEL_TAG}-n0-2.0x.png"
     first = out.read_bytes()
     p2 = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p2.returncode == 0

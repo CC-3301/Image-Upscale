@@ -17,7 +17,7 @@ def test_nested_folder_mirror_and_top_rename(workdir):
     p = run_engine(["-i", a, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
 
-    out = workdir / "A-(waifu2x_upconv_7_art)-2.0x"
+    out = workdir / "A-(waifu2x_upconv_7_art)-n0-2.0x"
     assert out.is_dir()
     assert (out / "root.png").exists()
     assert (out / "B" / "C" / "img.png").exists()
@@ -25,7 +25,7 @@ def test_nested_folder_mirror_and_top_rename(workdir):
     # 原目录不被修改
     assert (a / "B" / "C" / "img.png").exists()
     # 输出目录里不应出现第二层重命名（如 A-...-2.0x/B/A-...）
-    assert not (out / "B" / "A-(waifu2x_upconv_7_art)-2.0x").exists()
+    assert not (out / "B" / "A-(waifu2x_upconv_7_art)-n0-2.0x").exists()
 
 
 @needs_engine
@@ -41,7 +41,7 @@ def test_corrupt_file_fails_but_batch_continues(workdir):
     p = run_engine(["-i", folder, "-f", "png", "-g", "-1"])
     assert p.returncode == 3  # IO/解码失败汇总
 
-    out = workdir / "batch-(waifu2x_upconv_7_art)-2.0x"
+    out = workdir / "batch-(waifu2x_upconv_7_art)-n0-2.0x"
     assert (out / "good1.png").exists()
     assert (out / "sub" / "good2.png").exists()
     assert not (out / "bad.png").exists()

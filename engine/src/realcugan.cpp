@@ -68,6 +68,7 @@ RealCUGAN::RealCUGAN(int gpuid, bool _tta_mode, int num_threads)
     bicubic_3x = 0;
     bicubic_4x = 0;
     tta_mode = _tta_mode;
+    pro = false;
 }
 
 RealCUGAN::~RealCUGAN()
@@ -151,8 +152,9 @@ int RealCUGAN::load(const std::string& parampath, const std::string& modelpath)
     // initialize preprocess and postprocess pipeline
     if (vkdev)
     {
-        std::vector<ncnn::vk_specialization_type> specializations(1);
+        std::vector<ncnn::vk_specialization_type> specializations(2);
         specializations[0].i = 0; // RGB 适配
+        specializations[1].i = pro ? 1 : 0; // pro 系权重归一化（工单 40）
 
         {
             static std::vector<uint32_t> spirv;
@@ -856,7 +858,7 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
                         {
                             for (int j = 0; j < in.w; j++)
                             {
-                                *outptr0++ = *ptr++ * (1 / 255.f);
+                                *outptr0++ = norm_in(*ptr++);
                             }
                         }
                     }
@@ -994,7 +996,7 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                                     float v = (*ptr0++ + *ptr1++ + *ptr2-- + *ptr3-- + *ptr4 + *ptr5 + *ptr6 + *ptr7) / 8;
 
-                                    *outptr++ = v * 255.f + 0.5f + inptr[j / 4] * 255.f;
+                                    *outptr++ = denorm_out(v) + 0.5f + inptr[j / 4] * 255.f;
                                 }
                             }
                         }
@@ -1029,7 +1031,7 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                                     float v = (*ptr0++ + *ptr1++ + *ptr2-- + *ptr3-- + *ptr4 + *ptr5 + *ptr6 + *ptr7) / 8;
 
-                                    *outptr++ = v * 255.f + 0.5f;
+                                    *outptr++ = denorm_out(v) + 0.5f;
                                 }
                             }
                         }
@@ -1055,7 +1057,7 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                         for (int i = 0; i < in.w * in.h; i++)
                         {
-                            *outptr++ = *ptr++ * (1 / 255.f);
+                            *outptr++ = norm_in(*ptr++);
                         }
                     }
 
@@ -1124,7 +1126,7 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                                 for (int j = 0; j < out.w; j++)
                                 {
-                                    *outptr++ = *ptr++ * 255.f + 0.5f + inptr[j / 4] * 255.f;
+                                    *outptr++ = denorm_out(*ptr++) + 0.5f + inptr[j / 4] * 255.f;
                                 }
                             }
                         }
@@ -1141,7 +1143,7 @@ int RealCUGAN::process_cpu(const ncnn::Mat& inimage, ncnn::Mat& outimage) const
 
                                 for (int j = 0; j < out.w; j++)
                                 {
-                                    *outptr++ = *ptr++ * 255.f + 0.5f;
+                                    *outptr++ = denorm_out(*ptr++) + 0.5f;
                                 }
                             }
                         }
@@ -2793,7 +2795,7 @@ int RealCUGAN::process_cpu_se_stage0(const ncnn::Mat& inimage, const std::vector
                         {
                             for (int j = 0; j < in.w; j++)
                             {
-                                *outptr0++ = *ptr++ * (1 / 255.f);
+                                *outptr0++ = norm_in(*ptr++);
                             }
                         }
                     }
@@ -2904,7 +2906,7 @@ int RealCUGAN::process_cpu_se_stage0(const ncnn::Mat& inimage, const std::vector
 
                         for (int i = 0; i < in.w * in.h; i++)
                         {
-                            *outptr++ = *ptr++ * (1 / 255.f);
+                            *outptr++ = norm_in(*ptr++);
                         }
                     }
 
@@ -3043,7 +3045,7 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
                         {
                             for (int j = 0; j < in.w; j++)
                             {
-                                *outptr0++ = *ptr++ * (1 / 255.f);
+                                *outptr0++ = norm_in(*ptr++);
                             }
                         }
                     }
@@ -3189,7 +3191,7 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                                     float v = (*ptr0++ + *ptr1++ + *ptr2-- + *ptr3-- + *ptr4 + *ptr5 + *ptr6 + *ptr7) / 8;
 
-                                    *outptr++ = v * 255.f + 0.5f + inptr[j / 4] * 255.f;
+                                    *outptr++ = denorm_out(v) + 0.5f + inptr[j / 4] * 255.f;
                                 }
                             }
                         }
@@ -3224,7 +3226,7 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                                     float v = (*ptr0++ + *ptr1++ + *ptr2-- + *ptr3-- + *ptr4 + *ptr5 + *ptr6 + *ptr7) / 8;
 
-                                    *outptr++ = v * 255.f + 0.5f;
+                                    *outptr++ = denorm_out(v) + 0.5f;
                                 }
                             }
                         }
@@ -3250,7 +3252,7 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                         for (int i = 0; i < in.w * in.h; i++)
                         {
-                            *outptr++ = *ptr++ * (1 / 255.f);
+                            *outptr++ = norm_in(*ptr++);
                         }
                     }
 
@@ -3327,7 +3329,7 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                                 for (int j = 0; j < out.w; j++)
                                 {
-                                    *outptr++ = *ptr++ * 255.f + 0.5f + inptr[j / 4] * 255.f;
+                                    *outptr++ = denorm_out(*ptr++) + 0.5f + inptr[j / 4] * 255.f;
                                 }
                             }
                         }
@@ -3344,7 +3346,7 @@ int RealCUGAN::process_cpu_se_stage2(const ncnn::Mat& inimage, const std::vector
 
                                 for (int j = 0; j < out.w; j++)
                                 {
-                                    *outptr++ = *ptr++ * 255.f + 0.5f;
+                                    *outptr++ = denorm_out(*ptr++) + 0.5f;
                                 }
                             }
                         }
@@ -3575,7 +3577,7 @@ int RealCUGAN::process_cpu_se_very_rough_stage0(const ncnn::Mat& inimage, const 
                         {
                             for (int j = 0; j < in.w; j++)
                             {
-                                *outptr0++ = *ptr++ * (1 / 255.f);
+                                *outptr0++ = norm_in(*ptr++);
                             }
                         }
                     }
@@ -3686,7 +3688,7 @@ int RealCUGAN::process_cpu_se_very_rough_stage0(const ncnn::Mat& inimage, const 
 
                         for (int i = 0; i < in.w * in.h; i++)
                         {
-                            *outptr++ = *ptr++ * (1 / 255.f);
+                            *outptr++ = norm_in(*ptr++);
                         }
                     }
 

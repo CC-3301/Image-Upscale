@@ -26,7 +26,7 @@ def _smoke(workdir, model, scale):
 def test_all_bundled_models_cpu(workdir, model, scale, outsize):
     p, inp = _smoke(workdir, model, scale)
     assert p.returncode == 0, p.stderr
-    out = workdir / f"in-({model})-{scale}.0x.png"
+    out = workdir / f"in-({model})-n0-{scale}.0x.png"
     assert out.exists()
     assert Image.open(out).size == outsize
 
@@ -60,20 +60,21 @@ def test_scale_validation_per_model(workdir):
     # realcugan-se 原生 3x
     p = run_engine(["-i", inp, "-m", "realcugan-se", "-s", "3", "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
-    assert (workdir / "in-(realcugan-se)-3.0x.png").exists()
+    assert (workdir / "in-(realcugan-se)-n0-3.0x.png").exists()
     # waifu2x_upconv_7_art 无 4x → 参数错误
     p2 = run_engine(["-i", inp, "-m", "waifu2x_upconv_7_art", "-s", "4", "-g", "-1"])
     assert p2.returncode == 1
 
 
 @needs_engine
-def test_denoise_naming_none_has_no_segment(workdir):
+def test_denoise_naming_none_writes_n0_segment(workdir):
+    """工单 39：无降噪也写 -n0，便于一眼确认降噪档位"""
     inp = workdir / "in.png"
     make_png(inp)
     p = run_engine(["-i", inp, "-m", "waifu2x_cunet", "-f", "png", "-g", "-1"])
     assert p.returncode == 0
-    assert (workdir / "in-(waifu2x_cunet)-2.0x.png").exists()
-    assert not (workdir / "in-(waifu2x_cunet)-n0-2.0x.png").exists()
+    assert (workdir / "in-(waifu2x_cunet)-n0-2.0x.png").exists()
+    assert not (workdir / "in-(waifu2x_cunet)-2.0x.png").exists()
 
 
 # ---- 工单 16 缺陷修复：models/manifest.conf 按引擎自身位置解析，不再强依赖 CWD ----

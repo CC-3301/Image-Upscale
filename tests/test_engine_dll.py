@@ -53,7 +53,7 @@ def test_dll_single_file_success(workdir):
     assert "progress 1/1\n" in out_lines
     assert any(l.endswith(" done\n") and " -> " in l for l in out_lines)
     assert "done\n" in out_lines
-    out = workdir / "in-(waifu2x_upconv_7_art)-2.0x.png"
+    out = workdir / "in-(waifu2x_upconv_7_art)-n0-2.0x.png"
     assert out.exists()
     assert Image.open(out).size == (96, 64)
 

@@ -42,6 +42,15 @@ public partial class MainWindow : Window
     // 工单 13：滑条 ↔ 输入框同步的重入保护
     private int _quality = 90;
 
+    // 工单 41：降噪下拉项 ↔ 引擎档位的登记表（自动 = -1），与 DenoiseBox.Items 一一对应
+    // （下拉项按模型能力动态增删，缺档位的模型上“序号”不再等于“档位”）
+    private readonly List<int> _denoiseLevels = new();
+
+    // 工单 42：降采样滤镜（界面标签 ↔ 引擎 token 一一登记，同样不靠序号推语义；token 表供 SettingsStore 校验）
+    // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
+    internal static readonly string[] DownFilterTokens = { "lanczos", "catmullrom", "bicubic", "box" };
+    private static readonly string[] DownFilterLabels = { "Lanczos", "Catmull-Rom", "Bicubic", "Box" };
+
     public MainWindow()
     {
         InitializeComponent();
@@ -52,6 +61,10 @@ public partial class MainWindow : Window
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/assets/app.ico", UriKind.Absolute));
         // 工单 25/37：几何恢复必须在显示之前（Loaded 时窗口已渲染，先闪默认位再跳走）；
         // 引擎定位与其余设置恢复仍在 OnLoaded
+        // 工单 42：降采样下拉（与模型无关的固定档位表；默认项 = Lanczos）
+        foreach (var label in DownFilterLabels)
+            DownFilterBox.Items.Add(label);
+        DownFilterBox.SelectedIndex = 0;
         RestoreWindowBounds(SettingsStore.Load());
         Loaded += OnLoaded;
     }
@@ -108,6 +121,10 @@ public partial class MainWindow : Window
         // 输出格式
         var fmtIdx = s.OutputExt switch { "jpg" => 0, "png" => 1, "webp" => 2, _ => 0 };
         FormatBox.SelectedIndex = fmtIdx;
+
+        // 工单 42：降采样滤镜（未记录/非法值 → 默认 Lanczos）
+        var dfIdx = Array.IndexOf(DownFilterTokens, s.DownFilter);
+        DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : 0;
 
         // 质量：真源为输入框（v0.2.4 去滑条），非法存储值回退默认 90
         var q = (s.OutputQuality >= 0 && s.OutputQuality <= 100) ? s.OutputQuality : 90;
@@ -174,12 +191,14 @@ public partial class MainWindow : Window
         ScaleBox.SelectedIndex = 0;
 
         // 降噪档位（工单 22 中文文案；工单 23 能力判据；工单 24 默认自动、不支持固定无）
+        // 工单 41：项与引擎档位同步登记，构造命令行时按登记值取，不能再用序号推档位
         DenoiseBox.Items.Clear();
-        DenoiseBox.Items.Add("自动");
-        DenoiseBox.Items.Add("无");
-        if (m.Denoise.ContainsKey(1)) DenoiseBox.Items.Add("低");
-        if (m.Denoise.ContainsKey(2)) DenoiseBox.Items.Add("中");
-        if (m.Denoise.ContainsKey(3)) DenoiseBox.Items.Add("高");
+        _denoiseLevels.Clear();
+        DenoiseBox.Items.Add("自动"); _denoiseLevels.Add(-1);
+        DenoiseBox.Items.Add("无");   _denoiseLevels.Add(0);
+        if (m.Denoise.ContainsKey(1)) { DenoiseBox.Items.Add("低"); _denoiseLevels.Add(1); }
+        if (m.Denoise.ContainsKey(2)) { DenoiseBox.Items.Add("中"); _denoiseLevels.Add(2); }
+        if (m.Denoise.ContainsKey(3)) { DenoiseBox.Items.Add("高"); _denoiseLevels.Add(3); }
         if (m.SupportsDenoise)
         {
             DenoiseHint.Visibility = Visibility.Collapsed;
@@ -285,11 +304,16 @@ public partial class MainWindow : Window
         }
 
         // 降噪：自动 → auto；无 → none；低/中/高 → low/mid/high（工单 22/23/24）
+        // 工单 41：按登记的档位取名（pro 只有 自动/无/高，序号 2 是“高”而非“低”）
         var dSel = DenoiseBox.SelectedIndex;
+        var dLvl = (dSel >= 0 && dSel < _denoiseLevels.Count) ? _denoiseLevels[dSel] : -1;
         args.Add("--denoise");
-        if (dSel == 0) args.Add("auto");
-        else if (dSel == 1) args.Add("none");
-        else args.Add(dSel == 2 ? "low" : dSel == 3 ? "mid" : "high");
+        args.Add(dLvl < 0 ? "auto" : dLvl == 0 ? "none" : dLvl == 1 ? "low" : dLvl == 2 ? "mid" : "high");
+
+        // 工单 42：降采样滤镜（只在缩小路径生效；倍率模式下引擎忽略该参数）
+        var dfSel = DownFilterBox.SelectedIndex;
+        args.Add("--down-filter");
+        args.Add(DownFilterTokens[dfSel >= 0 && dfSel < DownFilterTokens.Length ? dfSel : 0]);
 
         var fmt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString();
         args.Add("-f");
@@ -420,6 +444,10 @@ public partial class MainWindow : Window
             s.OutputQuality = _quality;
         }
 
+        // 工单 42：降采样滤镜（与模型无关，引擎缺失时也照样记录）
+        var dfSelSave = DownFilterBox.SelectedIndex;
+        s.DownFilter = DownFilterTokens[dfSelSave >= 0 && dfSelSave < DownFilterTokens.Length ? dfSelSave : 0];
+
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
             ? RestoreBounds
@@ -444,6 +472,8 @@ public class SettingsStore
     public int ScaleHeight;
     public string OutputExt = "jpg";
     public int OutputQuality = -1;     // -1 = 无记录
+    // 工单 42：降采样滤镜 token（lanczos/bicubic/mitchell/bspline/box）
+    public string DownFilter = "lanczos";
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;
     public int WindowTop = int.MinValue;
@@ -479,6 +509,7 @@ public class SettingsStore
             s.ScaleHeight = TryPositiveInt(map, "LastScaleHeight");
             s.OutputExt = map.TryGetValue("LastOutputExt", out v) && v is "jpg" or "png" or "webp" ? v : "jpg";
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
+            s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(MainWindow.DownFilterTokens, v) >= 0 ? v : "lanczos";
 
             // 工单 25：窗口几何
             s.WindowLeft = map.TryGetValue("LastWindowLeft", out v) && int.TryParse(v, out var nl) ? nl : int.MinValue;
@@ -509,6 +540,7 @@ public class SettingsStore
             sb.AppendLine($"LastScaleHeight={s.ScaleHeight}");
             sb.AppendLine($"LastOutputExt={s.OutputExt}");
             sb.AppendLine($"LastOutputQuality={s.OutputQuality}");
+            sb.AppendLine($"LastDownFilter={s.DownFilter}");
             // 工单 25：窗口几何
             sb.AppendLine($"LastWindowLeft={s.WindowLeft}");
             sb.AppendLine($"LastWindowTop={s.WindowTop}");

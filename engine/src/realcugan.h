@@ -61,6 +61,14 @@ public:
     int tilesize;
     int prepadding;
     int syncgap;
+    // pro 系权重（models-pro / models-nose）需要 Real-CUGAN 官方的 [0.15,0.85] 仿射归一化（工单 40）
+    bool pro;
+
+protected:
+    // 官方 Real-CUGAN 对 pro 系权重的输入/输出仿射（upcunet_v3.py: np2tensor / forward）：
+    // 输入 [0,1] → [0.15,0.85]，输出反向；非 pro 权重为恒等。
+    float norm_in(float v) const { return pro ? v * (0.7f / 255.f) + 0.15f : v * (1 / 255.f); }
+    float denorm_out(float v) const { return pro ? (v - 0.15f) * (255.f / 0.7f) : v * 255.f; }
 
 private:
     ncnn::VulkanDevice* vkdev;
