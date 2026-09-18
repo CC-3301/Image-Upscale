@@ -13,3 +13,4 @@
 - [ ] 合成测试图（干净 / 轻度 JPEG 伪影 / 重度伪影）分别映射到合理档位
 - [ ] 不支持降噪的模型收到 AUTO 时明确报错，与手动档行为一致
 - [ ] 手动档行为完全不受影响
+- 2026-09-19 补记（v0.2.6）：verbose 的「模型侧落点」已补——`engine loaded scale=… denoise=… prepad=…` + `model variant: <权重文件>`；并有回归测试 `test_verbose_reports_resolved_model_variant` 守住。

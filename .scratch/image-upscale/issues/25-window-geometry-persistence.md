@@ -31,3 +31,4 @@
 
 ### 实施记录（2026-09-15）
 - setting.ini 新增 LastWindowLeft/Top/Width/Height/Maximized；退出写 RestoreBounds（最大化/最小化态）；启动恢复（尺寸→位置→最大化），位置与虚拟屏幕无交集或超出屏幕则回退默认；OnClosing 重构为逐项覆盖，引擎缺失场景旧设置不丢。人工：拖动/调整→重启恢复；最大化关闭→重启还原；手写屏外坐标→窗口可见。
+- 2026-09-19 补记（v0.2.6）：补齐「位置回退居中」——无有效已存位置时设 `WindowStartupLocation=CenterScreen`（原先保持系统默认位）。

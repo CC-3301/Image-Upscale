@@ -45,3 +45,4 @@
 ### 实施记录（2026-09-14）
 - GridSplitter（ResizeBehavior=PreviousAndNext）+ 日志 MinHeight=80
 - 人工：拖拽调整高度上下限
+- 2026-09-19 补记（v0.2.6）：补齐本工单要求的**上限**——日志行 `MaxHeight = 窗口高度 × 60%`（`OnWindowSizeChanged`），并给「开始」行加 `MinHeight=42`；拖到极限不再挤掉开始按钮。

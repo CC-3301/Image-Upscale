@@ -24,3 +24,4 @@
   - GUI：进程启动存活 ✅（视觉验收待人工）
 - zip 内布局：ImageUpscaleGui.exe / image-upscale.exe / models/(7 组+manifest) / LICENSE / NOTICE.md / README.md
 Status: done（自动化冒烟通过；GUI 视觉验收待人工）
+- 2026-09-19 补记（v0.2.6）：README 已补「模型许可出处表」与「导入自己的模型」说明（manifest 字段规则 + 各架构权重文件命名）；NOTICE.md 那句悬空引用改为指向该表。工单两处验收齐备。

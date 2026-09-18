@@ -12,8 +12,9 @@ __pycache__/
 .pytest_cache/
 tests/.baseline/
 
-# 临时产物
+# 临时产物（统一放仓库根，命名 .tmp-<用途>；含原 .tmp-convert/ 与 .tmp-publish/；见 AGENTS.md）
 *.log
+.tmp-*
 
 # pi 内部目标文件
 .pi/
@@ -21,18 +22,12 @@ tests/.baseline/
 # asan 构建目录
 bld-asan/
 
-# pnnx 转换临时目录
-.tmp-convert/
-
 # GUI 构建产物
 gui/bin/
 gui/obj/
 
 # 打包产物
 dist/
-
-# 本地发布干跑临时目录
-.tmp-publish/
 
 # 维护者本地测试素材（输入图与对拍产物，不入库）
 references/
