@@ -70,10 +70,12 @@
 - 横向 StackPanel 在窄窗口下溢出即被裁剪且不可达 → 功能行用 `WrapPanel` + Window `MinWidth`/`MinHeight`。
 - 日志区用 `*` 行 + `GridSplitter`（`ResizeBehavior="PreviousAndNext"`）拖拽调高，`MinHeight` 设下限；ScrollViewer 与 GridSplitter 行为冲突，本布局靠 Min 尺寸兜底、未加滚动。
 
-### 2.4 降噪能力判据与持久化边界（工单 23/24/14）
+### 2.4 降噪能力判据与持久化边界（工单 23/24/14/49）
 
 - "支持降噪" = 清单存在 **none 以外**档位；仅 none 的模型灰置控件并固定"无"，否则引擎参数错误。
-- 降噪档位是**临时选择**（grilling 定案）：不持久化，启动与切换模型一律回默认档（支持→自动，不支持→无）。持久化只记模型、尺寸模式+各模式数值、格式、质量（`setting.ini`，exe 同目录，waifu2x-caffe 同构）。
+- 降噪档位**跨模型切换与重启记忆**（工单 49 修定，取代原 grilling 的"临时选择、不持久化"定案）：档位齐备（无/低/中/高）的模型共用一份全局记忆、默认"自动"；档位不齐的模型各自独立记忆、默认**最高可用档**（`realcugan-pro` = 无/高 → "高"）；记忆值在当前模型不可用 → 回退默认档；不支持降噪的模型固定"无"并灰置。
+- **程序化设置 `SelectedIndex` 会触发同一个 `SelectionChanged`**：`OnModelChanged` 里恢复/回退默认档时必须用抑制标志（`_suppressDenoiseWrite`）包住，否则回退值会经事件写回记忆，把用户存的档位抹掉（同工单 51 的 `_suppressAddSuffixWrite` 模式）。
+- **持久化清单**（`setting.ini`，exe 同目录，waifu2x-caffe 同构）：模型、尺寸模式 + 各模式数值、输出格式 + 质量、降采样方式（`LastDownFilter`，工单 42）、文件添加扩展名（`LastAddSuffix`，工单 51）、降噪档位（`LastDenoise` / `LastDenoise_<modelId>`，工单 49）、窗口几何（`LastWindowLeft/Top/Width/Height/Maximized`，工单 25）；逐项校验，非法值静默回退默认。
 
 ### 2.5 "与界面统一"的字体需求 = 继承全局默认，不是换字体名（工单 35）
 

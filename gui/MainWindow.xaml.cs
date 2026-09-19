@@ -27,6 +27,10 @@ public class ModelEntry
 
     // 工单 23：支持降噪 = 存在 none 以外的档位（低/中/高任一）
     public bool SupportsDenoise => Denoise.Keys.Any(k => k != 0);
+
+    // 工单 49：档位齐备（无/低/中/高四档）= AUTO 的前提（引擎侧同样拒绝不连续档位，工单 44），
+    // 也是降噪记忆分槽的判据：齐备档位的模型共用全局槽，不齐的各自独立槽
+    public bool DenoiseComplete => Denoise.ContainsKey(1) && Denoise.ContainsKey(2) && Denoise.ContainsKey(3);
 }
 
 public partial class MainWindow : Window
@@ -45,6 +49,13 @@ public partial class MainWindow : Window
     // 工单 41：降噪下拉项 ↔ 引擎档位的登记表（自动 = -1），与 DenoiseBox.Items 一一对应
     // （下拉项按模型能力动态增删，缺档位的模型上“序号”不再等于“档位”）
     private readonly List<int> _denoiseLevels = new();
+
+    // 工单 49：降噪档位记忆（内存态，退出时随 OnClosing 一次性落盘）——
+    // 档位齐备的模型共用 _denoiseGlobal，档位不齐的模型各自写 _denoiseByModel；
+    // 程序化设置 SelectedIndex（恢复记忆/回退默认）由 _suppressDenoiseWrite 拦住，不写回记忆
+    private int _denoiseGlobal = -1;
+    private readonly Dictionary<string, int> _denoiseByModel = new();
+    private bool _suppressDenoiseWrite;
 
     // 工单 42：降采样滤镜的 token ↔ 标签表已移到 SettingsStore（单一定义来源）——
     // 原先定义在此处、由 SettingsStore 反向引用 MainWindow，依赖方向是颠倒的
@@ -76,6 +87,11 @@ public partial class MainWindow : Window
             AddSuffixBox.Items.Add(label);
         var s = SettingsStore.Load();
         _addSuffix = s.AddSuffix;
+        // 工单 49：降噪记忆初值 —— 与后缀开关同理（RestoreSettings 在 models 缺失时早退，
+        // 若只在那里读，“退出时写回”会拿初值把用户存的档位抹成默认）
+        _denoiseGlobal = s.Denoise;
+        foreach (var kv in s.DenoiseByModel)
+            _denoiseByModel[kv.Key] = kv.Value;
         UpdateAddSuffixState(); // 输入框还是空 → 非文件输入，显示「开」并灰置
         RestoreWindowBounds(s);
         Loaded += OnLoaded;
@@ -217,31 +233,53 @@ public partial class MainWindow : Window
             ScaleBox.Items.Add($"{sc}.0x");
         ScaleBox.SelectedIndex = 0;
 
-        // 降噪档位（工单 22 中文文案；工单 23 能力判据；工单 24 默认自动、不支持固定无）
+        // 降噪档位（工单 22 中文文案；工单 23 能力判据；工单 24 默认档；工单 49 默认档修订与记忆）
         // 工单 41：项与引擎档位同步登记，构造命令行时按登记值取，不能再用序号推档位
         // 工单 44：AUTO 需要 无/低/中/高 四档齐备（引擎侧同样拒绝不连续档位），
-        //          故 realcugan-pro 这类只有 无/高 的模型不提供「自动」项，默认落「无」
-        bool autoOk = m.Denoise.ContainsKey(1) && m.Denoise.ContainsKey(2) && m.Denoise.ContainsKey(3);
+        //          故 realcugan-pro 这类只有 无/高 的模型不提供「自动」项
+        // 工单 49：档位齐备 → 默认「自动」；不齐 → 默认最高可用档（pro = 无/高 → 「高」）；
+        //          不支持降噪 → 固定「无」（工单 23 判据不变）
+        _suppressDenoiseWrite = true;
         DenoiseBox.Items.Clear();
         _denoiseLevels.Clear();
-        if (autoOk) { DenoiseBox.Items.Add("自动"); _denoiseLevels.Add(-1); }
-        DenoiseBox.Items.Add("无");   _denoiseLevels.Add(0);
-        if (m.Denoise.ContainsKey(1)) { DenoiseBox.Items.Add("低"); _denoiseLevels.Add(1); }
-        if (m.Denoise.ContainsKey(2)) { DenoiseBox.Items.Add("中"); _denoiseLevels.Add(2); }
-        if (m.Denoise.ContainsKey(3)) { DenoiseBox.Items.Add("高"); _denoiseLevels.Add(3); }
-        if (m.SupportsDenoise)
+        for (var lvl = -1; lvl <= 3; lvl++)
         {
-            DenoiseHint.Visibility = Visibility.Collapsed;
-            DenoiseBox.IsEnabled = true;
-            // 默认「自动」（工单 24）；档位不连续时首位就是「无」
-            DenoiseBox.SelectedIndex = 0;
+            // 自动档要求四档齐备；≥1 的档位按清单登记（「无」恒列出 —— 不支持降噪的模型也只列它）
+            if (lvl < 0 ? !m.DenoiseComplete : lvl > 0 && !m.Denoise.ContainsKey(lvl))
+                continue;
+            DenoiseBox.Items.Add(SettingsStore.DenoiseLabelOfLevel(lvl));
+            _denoiseLevels.Add(lvl);
         }
-        else
-        {
-            DenoiseHint.Visibility = Visibility.Visible;
-            DenoiseBox.IsEnabled = false;
-            DenoiseBox.SelectedIndex = 0; // 唯一一项「无」
-        }
+        DenoiseHint.Visibility = m.SupportsDenoise ? Visibility.Collapsed : Visibility.Visible;
+        DenoiseBox.IsEnabled = m.SupportsDenoise;
+        // 记忆值只在当前模型的可用集合内才采用（齐备读全局槽 / 不齐读自己的独立槽），
+        // 否则回退本模型的默认档（例：全局记忆「低」→ 切到只有 无/高 的 pro 落「高」）
+        var remembered = m.DenoiseComplete
+            ? _denoiseGlobal
+            : _denoiseByModel.TryGetValue(m.Id, out var saved) ? saved : DefaultDenoiseLevel(m);
+        var denoiseIdx = _denoiseLevels.IndexOf(remembered);
+        DenoiseBox.SelectedIndex = denoiseIdx >= 0 ? denoiseIdx : _denoiseLevels.IndexOf(DefaultDenoiseLevel(m));
+        _suppressDenoiseWrite = false;
+    }
+
+    // 工单 49：无记忆/记忆不可用时的默认档（返回值保证在当前模型的可用集合内）
+    private static int DefaultDenoiseLevel(ModelEntry m)
+        => !m.SupportsDenoise ? 0 : m.DenoiseComplete ? -1 : m.Denoise.Keys.Max();
+
+    // 工单 49：选档写回记忆槽（齐备档位 → 全局槽；不齐档位 → 各自独立槽），退出时随 OnClosing 落盘；
+    // OnModelChanged 内部的程序化设置由 _suppressDenoiseWrite 拦掉，否则恢复记忆时的回退默认会改写记忆
+    private void OnDenoiseChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressDenoiseWrite || _models.Count == 0 || ModelBox.SelectedIndex < 0)
+            return;
+        var dSel = DenoiseBox.SelectedIndex;
+        if (dSel < 0 || dSel >= _denoiseLevels.Count)
+            return;
+        var m = _models[ModelBox.SelectedIndex];
+        if (m.DenoiseComplete)
+            _denoiseGlobal = _denoiseLevels[dSel];
+        else if (m.SupportsDenoise)
+            _denoiseByModel[m.Id] = _denoiseLevels[dSel];
     }
 
     // ---- 工单 13 → v0.2.4：质量去滑条，真源为 _quality，输入框失焦规整 ----
@@ -356,10 +394,11 @@ public partial class MainWindow : Window
 
         // 降噪：自动 → auto；无 → none；低/中/高 → low/mid/high（工单 22/23/24）
         // 工单 41：按登记的档位取名（pro 只有 自动/无/高，序号 2 是“高”而非“低”）
+        // 工单 49：档位 → token 走 SettingsStore 的单一定义来源表（与记忆槽、Load 校验同一份）
         var dSel = DenoiseBox.SelectedIndex;
         var dLvl = (dSel >= 0 && dSel < _denoiseLevels.Count) ? _denoiseLevels[dSel] : -1;
         args.Add("--denoise");
-        args.Add(dLvl < 0 ? "auto" : dLvl == 0 ? "none" : dLvl == 1 ? "low" : dLvl == 2 ? "mid" : "high");
+        args.Add(SettingsStore.DenoiseTokenOfLevel(dLvl));
 
         // 工单 42：降采样滤镜（只在缩小路径生效；倍率模式下引擎忽略该参数）
         args.Add("--down-filter");
@@ -502,6 +541,13 @@ public partial class MainWindow : Window
         // 工单 51：后缀开关（同样与模型无关；写记忆值而非灰置时的显示值）
         s.AddSuffix = _addSuffix;
 
+        // 工单 49：降噪记忆 —— 全局槽写当前值，独立槽按已加载模型清单生成（没被用户碰过的模型
+        // 写其默认档，键因此在 setting.ini 里总是可见）；档位不齐但支持降噪的模型才建键
+        s.Denoise = _denoiseGlobal;
+        foreach (var m in _models)
+            if (m.SupportsDenoise && !m.DenoiseComplete)
+                s.DenoiseByModel[m.Id] = _denoiseByModel.TryGetValue(m.Id, out var lv) ? lv : DefaultDenoiseLevel(m);
+
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
             ? RestoreBounds
@@ -530,6 +576,10 @@ public class SettingsStore
     public string DownFilter = "lanczos";
     // 工单 51：产物名是否带后缀段（true = 开，与 v0.2.8 现状一致；只对文件输入生效）
     public bool AddSuffix = true;
+    // 工单 49：降噪档位记忆 —— Denoise 是档位齐备的模型共用的全局槽（LastDenoise；-1 = 自动）；
+    // DenoiseByModel 是档位不齐的模型各自的独立槽（LastDenoise_<modelId>；无键 = 无记录 → 回退默认档）
+    public int Denoise = -1;
+    public Dictionary<string, int> DenoiseByModel = new();
 
     // 工单 42：降采样滤镜的 token ↔ 界面标签（**单一定义来源**；界面项与 setting.ini 校验共用）。
     // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
@@ -548,6 +598,23 @@ public class SettingsStore
     internal static bool AddSuffixFromIndex(int selectedIndex) => selectedIndex != 1;
 
     internal static int AddSuffixToIndex(bool addSuffix) => addSuffix ? 0 : 1;
+
+    // 工单 49：降噪档位表（**单一定义来源**，照 DownFilterTokens/Labels 模式）——下标 = 档位 + 1
+    // （0 = 自动 = -1 档 … 4 = 高 = 3 档）；界面标签、setting.ini token、引擎取值三处共用，调表不会静默错档
+    internal static readonly string[] DenoiseLabels = { "自动", "无", "低", "中", "高" };
+    internal static readonly string[] DenoiseTokens = { "auto", "none", "low", "mid", "high" };
+
+    // 档位 → 下标（越界回退「自动」，与 Load 的缺键默认一致）
+    private static int DenoiseIndex(int level) => level >= -1 && level <= 3 ? level + 1 : 0;
+
+    internal static string DenoiseLabelOfLevel(int level) => DenoiseLabels[DenoiseIndex(level)];
+    internal static string DenoiseTokenOfLevel(int level) => DenoiseTokens[DenoiseIndex(level)];
+
+    // token → 档位；非法 token 返回 -2（不是合法档位，调用方据此回退默认档）
+    internal static int DenoiseLevelOfToken(string token) => Array.IndexOf(DenoiseTokens, token) - 1;
+
+    // 工单 49：独立槽的键前缀（LastDenoise_<modelId>）
+    private const string DenoiseModelKeyPrefix = "LastDenoise_";
 
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;
@@ -588,6 +655,20 @@ public class SettingsStore
             // 工单 51：失缺/非法值静默回退默认「开」
             s.AddSuffix = map.TryGetValue("LastAddSuffix", out v) ? v != "0" : true;
 
+            // 工单 49：降噪记忆（全局槽缺键/非法值 → 默认「自动」；独立槽的非法条目丢弃 → 该模型回退默认档）
+            s.Denoise = map.TryGetValue("LastDenoise", out v) ? DenoiseLevelOfToken(v) : -1;
+            if (s.Denoise < -1)
+                s.Denoise = -1;
+            foreach (var kv in map)
+            {
+                if (!kv.Key.StartsWith(DenoiseModelKeyPrefix, StringComparison.Ordinal)
+                    || kv.Key.Length == DenoiseModelKeyPrefix.Length)
+                    continue;
+                var lvl = DenoiseLevelOfToken(kv.Value);
+                if (lvl >= -1)
+                    s.DenoiseByModel[kv.Key[DenoiseModelKeyPrefix.Length..]] = lvl;
+            }
+
             // 工单 25：窗口几何
             s.WindowLeft = map.TryGetValue("LastWindowLeft", out v) && int.TryParse(v, out var nl) ? nl : int.MinValue;
             s.WindowTop = map.TryGetValue("LastWindowTop", out v) && int.TryParse(v, out var nt) ? nt : int.MinValue;
@@ -619,6 +700,10 @@ public class SettingsStore
             sb.AppendLine($"LastOutputQuality={s.OutputQuality}");
             sb.AppendLine($"LastDownFilter={s.DownFilter}");
             sb.AppendLine($"LastAddSuffix={(s.AddSuffix ? 1 : 0)}");
+            // 工单 49：降噪记忆（全局槽 + 档位不齐模型各自的独立槽；键序稳定便于 diff/手改）
+            sb.AppendLine($"LastDenoise={DenoiseTokenOfLevel(s.Denoise)}");
+            foreach (var kv in s.DenoiseByModel.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                sb.AppendLine($"{DenoiseModelKeyPrefix}{kv.Key}={DenoiseTokenOfLevel(kv.Value)}");
             // 工单 25：窗口几何
             sb.AppendLine($"LastWindowLeft={s.WindowLeft}");
             sb.AppendLine($"LastWindowTop={s.WindowTop}");
