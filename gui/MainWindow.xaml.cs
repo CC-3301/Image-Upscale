@@ -26,11 +26,31 @@ public class ModelEntry
     public Dictionary<int, string> Denoise = new();
 
     // 工单 23：支持降噪 = 存在 none 以外的档位（低/中/高任一）
-    public bool SupportsDenoise => Denoise.Keys.Any(k => k != 0);
+    public bool SupportsDenoise => DenoiseLevels.Any(l => l > 0);
 
-    // 工单 49：档位齐备（无/低/中/高四档）= AUTO 的前提（引擎侧同样拒绝不连续档位，工单 44），
-    // 也是降噪记忆分槽的判据：齐备档位的模型共用全局槽，不齐的各自独立槽
-    public bool DenoiseComplete => Denoise.ContainsKey(1) && Denoise.ContainsKey(2) && Denoise.ContainsKey(3);
+    // 工单 49：四档齐备（无/低/中/高）= AUTO 的前提（引擎侧同样拒绝不连续档位，工单 44），
+    // 也是降噪记忆分槽的判据：齐备档位的模型共用全局槽，不齐的各自独立槽。
+    // 四档含「无」：清单只声明 低/中/高 的导入模型给「自动」会被引擎拒（退出码 1）
+    public bool DenoiseComplete => Denoise.ContainsKey(0) && Denoise.ContainsKey(1)
+        && Denoise.ContainsKey(2) && Denoise.ContainsKey(3);
+
+    // 工单 49：「本模型有哪些降噪档位」的**单一定义来源**（升序，自动 = -1 在首位）——
+    // 界面项构造、记忆值可用性校验、默认档三处都经它，规则只写在这里
+    public IEnumerable<int> DenoiseLevels => Enumerable.Range(-1, 5).Where(IsDenoiseLevelAvailable);
+
+    // 自动档要求四档齐备（与引擎侧同款）；「无」恒可用（不支持降噪的模型唯一项，工单 23）；
+    // 低/中/高 按清单登记
+    public bool IsDenoiseLevelAvailable(int level) => level switch
+    {
+        -1 => DenoiseComplete,
+        0 => true,
+        _ => Denoise.ContainsKey(level)
+    };
+
+    // 工单 49：无记忆/记忆不可用时的默认档（结果必在 DenoiseLevels 内）——
+    // 不支持降噪 → 「无」；四档齐备 → 「自动」；不齐 → 最高可用档（realcugan-pro = 无/高 → 「高」）
+    public int DefaultDenoiseLevel => !SupportsDenoise ? 0
+        : DenoiseComplete ? -1 : DenoiseLevels.Where(l => l >= 0).Max();
 }
 
 public partial class MainWindow : Window
@@ -242,11 +262,8 @@ public partial class MainWindow : Window
         _suppressDenoiseWrite = true;
         DenoiseBox.Items.Clear();
         _denoiseLevels.Clear();
-        for (var lvl = -1; lvl <= 3; lvl++)
+        foreach (var lvl in m.DenoiseLevels)
         {
-            // 自动档要求四档齐备；≥1 的档位按清单登记（「无」恒列出 —— 不支持降噪的模型也只列它）
-            if (lvl < 0 ? !m.DenoiseComplete : lvl > 0 && !m.Denoise.ContainsKey(lvl))
-                continue;
             DenoiseBox.Items.Add(SettingsStore.DenoiseLabelOfLevel(lvl));
             _denoiseLevels.Add(lvl);
         }
@@ -256,15 +273,23 @@ public partial class MainWindow : Window
         // 否则回退本模型的默认档（例：全局记忆「低」→ 切到只有 无/高 的 pro 落「高」）
         var remembered = m.DenoiseComplete
             ? _denoiseGlobal
-            : _denoiseByModel.TryGetValue(m.Id, out var saved) ? saved : DefaultDenoiseLevel(m);
+            : _denoiseByModel.TryGetValue(m.Id, out var saved) ? saved : m.DefaultDenoiseLevel;
         var denoiseIdx = _denoiseLevels.IndexOf(remembered);
-        DenoiseBox.SelectedIndex = denoiseIdx >= 0 ? denoiseIdx : _denoiseLevels.IndexOf(DefaultDenoiseLevel(m));
+        if (denoiseIdx < 0)
+        {
+            // 记忆不可用（清单档位变更 / 手改出的非法值）→ 回退默认档，并把**本模型正在用的那个槽**
+            // 规范化为生效值，下次落盘即写回合法值（否则界面恒默认、ini 恒旧值）。只改本槽，
+            // 其余槽（如齐备模型共用的全局槽）原样保留；此处仍被抑制标志包着，不走用户选择写回
+            remembered = m.DefaultDenoiseLevel;
+            denoiseIdx = _denoiseLevels.IndexOf(remembered);
+            if (m.DenoiseComplete)
+                _denoiseGlobal = remembered;
+            else if (m.SupportsDenoise)
+                _denoiseByModel[m.Id] = remembered;
+        }
+        DenoiseBox.SelectedIndex = denoiseIdx;
         _suppressDenoiseWrite = false;
     }
-
-    // 工单 49：无记忆/记忆不可用时的默认档（返回值保证在当前模型的可用集合内）
-    private static int DefaultDenoiseLevel(ModelEntry m)
-        => !m.SupportsDenoise ? 0 : m.DenoiseComplete ? -1 : m.Denoise.Keys.Max();
 
     // 工单 49：选档写回记忆槽（齐备档位 → 全局槽；不齐档位 → 各自独立槽），退出时随 OnClosing 落盘；
     // OnModelChanged 内部的程序化设置由 _suppressDenoiseWrite 拦掉，否则恢复记忆时的回退默认会改写记忆
@@ -542,11 +567,12 @@ public partial class MainWindow : Window
         s.AddSuffix = _addSuffix;
 
         // 工单 49：降噪记忆 —— 全局槽写当前值，独立槽按已加载模型清单生成（没被用户碰过的模型
-        // 写其默认档，键因此在 setting.ini 里总是可见）；档位不齐但支持降噪的模型才建键
+        // 写其默认档，键因此在 setting.ini 里总是可见）；档位不齐但支持降噪的模型才建键，
+        // 键名按 ini 语法回读（见 SettingsStore.IsDenoiseModelIdStorable）
         s.Denoise = _denoiseGlobal;
         foreach (var m in _models)
-            if (m.SupportsDenoise && !m.DenoiseComplete)
-                s.DenoiseByModel[m.Id] = _denoiseByModel.TryGetValue(m.Id, out var lv) ? lv : DefaultDenoiseLevel(m);
+            if (m.SupportsDenoise && !m.DenoiseComplete && SettingsStore.IsDenoiseModelIdStorable(m.Id))
+                s.DenoiseByModel[m.Id] = _denoiseByModel.TryGetValue(m.Id, out var lv) ? lv : m.DefaultDenoiseLevel;
 
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
@@ -613,8 +639,15 @@ public class SettingsStore
     // token → 档位；非法 token 返回 -2（不是合法档位，调用方据此回退默认档）
     internal static int DenoiseLevelOfToken(string token) => Array.IndexOf(DenoiseTokens, token) - 1;
 
-    // 工单 49：独立槽的键前缀（LastDenoise_<modelId>）
+    // 工单 49：独立槽的键前缀（LastDenoise_<modelId>）。键名按 ini 语法回读（行内第一个 '=' 切分、
+    // 键名去首尾空白），故只在 modelId 能原样往返时才建键
     private const string DenoiseModelKeyPrefix = "LastDenoise_";
+
+    // 工单 49：modelId 能否安全当独立槽键名（含 '=' / 换行 / 首尾空白 → 写得出读不回）。
+    // Save 时跳过这类模型 → 它们的档位只在本次会话内记忆，下次启动回退默认档
+    internal static bool IsDenoiseModelIdStorable(string modelId)
+        => !string.IsNullOrEmpty(modelId) && modelId.Trim() == modelId
+           && modelId.IndexOf('=') < 0 && modelId.IndexOf('\r') < 0 && modelId.IndexOf('\n') < 0;
 
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;
