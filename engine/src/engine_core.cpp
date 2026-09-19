@@ -635,37 +635,48 @@ static path_t single_file_outpath(const std::filesystem::path& in, const std::ws
     return in.parent_path() / (in.stem().wstring() + L"-(" + display + L")" + denoise_seg + L"-" + scale_seg + L"." + ext);
 }
 
+// 工单 50：忽略大小写的路径串比较（序号式，不依赖进程 locale —— setlocale(LC_ALL, "") 会让
+// towlower 跟着 locale 走）。Windows 用 CompareStringOrdinal；非 Windows 逐字节折叠 ASCII。
+static bool path_equal_ci(const path_t& a, const path_t& b)
+{
+    if (a.size() != b.size())
+        return false;
+#if _WIN32
+    return CompareStringOrdinal(a.c_str(), (int)a.size(), b.c_str(), (int)b.size(), TRUE) == CSTR_EQUAL;
+#else
+    // 非 Windows 的 path_t 是 std::string（见 filesystem_utils.h），逐字节折叠 ASCII 大小写；
+    // 不用 std::tolower/宽字符版本：前者同样跟 locale 走，后者在 char 上类型不匹配
+    for (size_t i = 0; i < a.size(); i++)
+    {
+        const unsigned char x = (unsigned char)a[i];
+        const unsigned char y = (unsigned char)b[i];
+        const unsigned char lx = (x >= 'A' && x <= 'Z') ? (unsigned char)(x - 'A' + 'a') : x;
+        const unsigned char ly = (y >= 'A' && y <= 'Z') ? (unsigned char)(y - 'A' + 'a') : y;
+        if (lx != ly)
+            return false;
+    }
+    return true;
+#endif
+}
+
 // 工单 50 守卫：产物路径与输入路径指向同一个文件时拒绝写盘，绝不覆盖源图。
-// 可达范围（与 spec.md 命名规则段、调用点注释三方一致）：只有单文件模式能命中 —— 带后缀名时
+// 可达范围（解释只此一处，调用点只做 single_file 门控）：只有单文件模式能命中 —— 带后缀名时
 // 产物名恒比输入名长（stem + 后缀段），目录模式的产物落在新建的带后缀输出目录里。故实际唯一
 // 触发场景 = 关闭后缀段（--no-rename）且输出格式与输入同名（A.png + -f png）。
-// 比较用规范化路径；大小写不敏感：Windows 文件系统默认不区分大小写，A.PNG 与 A.png 是同一个文件。
-// 折叠走 CompareStringOrdinal（序号比较、忽略大小写、与进程 locale 无关）：towlower 跟着
-// setlocale(LC_ALL, "") 选的 locale 走，非 ASCII 大小写映射不可靠。
-// weakly_canonical 用 error_code 重载并 fail-open（拿不到 canonical 即视为不同路径、不拦截）：
-// 守卫不得给 DLL 导出面新增异常路径（lessons §1：异常不得逃出导出面）。
+// 比较先规范化（相对路径、`.`/`..`、盘上真实大小写），再按 path_equal_ci 忽略大小写：Windows
+// 文件系统默认不区分大小写，A.PNG 与 A.png 是同一个文件。weakly_canonical 用 error_code 重载：
+// 守卫不得给 DLL 导出面新增异常路径（lessons §1）。规范化失败（拿不到 canonical）时回退为直接
+// 比较两条原始路径串 —— 既不中止，也不放行同名写盘：放行就等于把源图写坏。
 static bool is_same_path_ci(const path_t& a, const path_t& b)
 {
     std::error_code ec;
     const path_t ca = std::filesystem::weakly_canonical(a, ec);
     if (ec)
-        return false;
+        return path_equal_ci(a, b);
     const path_t cb = std::filesystem::weakly_canonical(b, ec);
     if (ec)
-        return false;
-    if (ca.size() != cb.size())
-        return false;
-#if _WIN32
-    return CompareStringOrdinal(ca.c_str(), (int)ca.size(), cb.c_str(), (int)cb.size(), TRUE) == CSTR_EQUAL;
-#else
-    // 非 Windows：保留按字符折叠的实现（C 运行时的大小写映射在该分支的预期平台上可用）
-    for (size_t i = 0; i < ca.size(); i++)
-    {
-        if (towlower(ca[i]) != towlower(cb[i]))
-            return false;
-    }
-    return true;
-#endif
+        return path_equal_ci(a, b);
+    return path_equal_ci(ca, cb);
 }
 
 // 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
@@ -872,9 +883,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         }
 
         // 工单 50：产物与输入同名 → 拒绝写盘（该文件不推理、不写盘，按 IO 失败计入，退出码 3）。
-        // 条件里的 single_file 只是把不可达情形写明白：带后缀名时产物名恒比输入名长，目录模式产物
-        // 落在新建的带后缀输出目录里，两者都不可能命中；实际唯一触发场景 = 关闭后缀段
-        // （--no-rename）且输出格式与输入同名（A.png + -f png）。
+        // 可达范围与比较口径见 is_same_path_ci 头注释（单一来源）
         if (single_file && is_same_path_ci(outpath, inpath))
         {
             fail(false, "refuse to overwrite input", outpath);

@@ -5,6 +5,7 @@ from PIL import Image
 from conftest import make_gradient, make_png, needs_engine, resolved_levels, run_engine
 
 
+@needs_engine
 def test_auto_clean_image_resolves_level0(workdir):
     inp = workdir / "clean.png"
     make_gradient(inp)

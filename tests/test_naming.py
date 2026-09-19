@@ -193,10 +193,13 @@ def test_no_rename_keeps_auto_mixed_level_segments(workdir):
 
 @needs_engine
 def test_no_rename_same_format_cyrillic_case_variant_refuses_overwrite(workdir):
-    """非 ASCII 大小写变体（西里尔 А / а）也指向同一个文件：NTFS 上 А.PNG 与 А.png 同路径。
+    """关闭后缀段 + 扩展名大小写变体（同一个文件）→ 拒写、源图字节不变。
 
-    守卫的大小写折叠若跟着进程 locale 走（towlower + setlocale(LC_ALL,"")），非 ASCII
-    大小写映射就不可靠 → 漏检即写回源图。折叠改走序号比较（CompareStringOrdinal）后与 locale 无关。
+    守护的是「关后缀 + 输出格式与输入同名」这条守卫在拼写变体下仍然命中：NTFS 上 А.PNG 与
+    А.png 是同一个文件，两种拼写都必须拒绝写盘。
+    不以「非 ASCII 大小写折叠与 locale 无关」为守护对象：产物名取自同一条输入路径（stem 与
+    父目录同源），两条比较串只可能差在 -f 决定的 ASCII 扩展名上，weakly_canonical 也会把
+    同一文件解析回盘上真实大小写 —— 折叠实现改不改都绿，故本用例不是红→绿证明（lessons §3.2/§3.5）。
     """
     on_disk = workdir / "А.PNG"  # 西里尔大写 А + 大写扩展名
     make_png(on_disk)
