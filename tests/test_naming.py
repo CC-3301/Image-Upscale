@@ -111,6 +111,29 @@ def test_no_rename_file_input_uses_original_name(workdir):
 
 
 @needs_engine
+def test_no_rename_jpeg_extension_sibling_is_not_same_path(workdir):
+    """`.jpeg` + `-f jpg`：扩展名代理（jpeg↔jpg）不是同一个文件 → 不命中原地覆盖
+
+    守护文档承诺的边界（spec.md 命名规则段/冲突策略段、README、CONTEXT）：产物 = stem + "." + 输出
+    扩展名 = `A.jpg` ≠ 输入 `A.jpeg` → 新增 `A.jpg`、源图字节不变（误判为同一文件会覆盖源图，不可撤销）。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.jpeg"
+    make_png(folder / "A.tmp.png", size=(32, 32))
+    Image.open(folder / "A.tmp.png").save(inp, format="JPEG", quality=90)
+    (folder / "A.tmp.png").unlink()
+    before = inp.read_bytes()
+
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--no-rename"])
+    assert p.returncode == 0, (p.returncode, p.stderr)
+    # 不命中：产物是新文件，源图原封不动
+    assert sorted(x.name for x in folder.iterdir()) == ["A.jpeg", "A.jpg"]
+    assert inp.read_bytes() == before
+    assert Image.open(folder / "A.jpg").size == (64, 64)
+
+
+@needs_engine
 def test_no_rename_direct_resize_omits_resize_segment(workdir):
     """直通缩放（目标 < 原图）同样不加 -(Resize)-<尺寸> 段"""
     folder = workdir / "B"
