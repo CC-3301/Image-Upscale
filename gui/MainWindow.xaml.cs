@@ -31,12 +31,11 @@ public class ModelEntry
     // 工单 49：四档齐备（无/低/中/高）= AUTO 的前提（引擎侧同样拒绝不连续档位，工单 44），
     // 也是降噪记忆分槽的判据：齐备档位的模型共用全局槽，不齐的各自独立槽。
     // 四档含「无」：清单只声明 低/中/高 的导入模型给「自动」会被引擎拒（退出码 1）
-    public bool DenoiseComplete => Denoise.ContainsKey(0) && Denoise.ContainsKey(1)
-        && Denoise.ContainsKey(2) && Denoise.ContainsKey(3);
+    public bool DenoiseComplete => SettingsStore.AllDenoiseLevels.Where(l => l >= 0).All(Denoise.ContainsKey);
 
     // 工单 49：「本模型有哪些降噪档位」的**单一定义来源**（升序，自动 = -1 在首位）——
     // 界面项构造、记忆值可用性校验、默认档三处都经它，规则只写在这里
-    public IEnumerable<int> DenoiseLevels => Enumerable.Range(-1, 5).Where(IsDenoiseLevelAvailable);
+    public IEnumerable<int> DenoiseLevels => SettingsStore.AllDenoiseLevels.Where(IsDenoiseLevelAvailable);
 
     // 自动档要求四档齐备（与引擎侧同款）；「无」恒可用（不支持降噪的模型唯一项，工单 23）；
     // 低/中/高 按清单登记
@@ -51,6 +50,10 @@ public class ModelEntry
     // 不支持降噪 → 「无」；四档齐备 → 「自动」；不齐 → 最高可用档（realcugan-pro = 无/高 → 「高」）
     public int DefaultDenoiseLevel => !SupportsDenoise ? 0
         : DenoiseComplete ? -1 : DenoiseLevels.Where(l => l >= 0).Max();
+
+    // 工单 49：降噪记忆分槽规则的**单一来源** —— 档位不齐但支持降噪的模型用自己的独立槽
+    // （齐备的共用全局槽，不支持的没有槽、固定「无」）
+    public bool HasOwnDenoiseSlot => SupportsDenoise && !DenoiseComplete;
 }
 
 public partial class MainWindow : Window
@@ -271,9 +274,7 @@ public partial class MainWindow : Window
         DenoiseBox.IsEnabled = m.SupportsDenoise;
         // 记忆值只在当前模型的可用集合内才采用（齐备读全局槽 / 不齐读自己的独立槽），
         // 否则回退本模型的默认档（例：全局记忆「低」→ 切到只有 无/高 的 pro 落「高」）
-        var remembered = m.DenoiseComplete
-            ? _denoiseGlobal
-            : _denoiseByModel.TryGetValue(m.Id, out var saved) ? saved : m.DefaultDenoiseLevel;
+        var remembered = ReadDenoiseMemory(m);
         var denoiseIdx = _denoiseLevels.IndexOf(remembered);
         if (denoiseIdx < 0)
         {
@@ -281,14 +282,31 @@ public partial class MainWindow : Window
             // 规范化为生效值，下次落盘即写回合法值（否则界面恒默认、ini 恒旧值）。只改本槽，
             // 其余槽（如齐备模型共用的全局槽）原样保留；此处仍被抑制标志包着，不走用户选择写回
             remembered = m.DefaultDenoiseLevel;
+            WriteDenoiseMemory(m, remembered);
             denoiseIdx = _denoiseLevels.IndexOf(remembered);
-            if (m.DenoiseComplete)
-                _denoiseGlobal = remembered;
-            else if (m.SupportsDenoise)
-                _denoiseByModel[m.Id] = remembered;
         }
         DenoiseBox.SelectedIndex = denoiseIdx;
         _suppressDenoiseWrite = false;
+    }
+
+    // 工单 49：降噪记忆分槽规则的**单一来源**（哪个模型读写哪个槽只写在这一对方法里）：
+    // 齐备档位 → 全局槽；档位不齐且支持降噪 → 自己的独立槽（无记录则默认档）；其余（不支持降噪）无槽
+    private int ReadDenoiseMemory(ModelEntry m)
+    {
+        if (m.DenoiseComplete)
+            return _denoiseGlobal;
+        if (m.HasOwnDenoiseSlot && _denoiseByModel.TryGetValue(m.Id, out var saved))
+            return saved;
+        return m.DefaultDenoiseLevel;
+    }
+
+    // 工单 49：把档位写进本模型该用的槽（不支持降噪的模型没有槽，不写）
+    private void WriteDenoiseMemory(ModelEntry m, int level)
+    {
+        if (m.DenoiseComplete)
+            _denoiseGlobal = level;
+        else if (m.HasOwnDenoiseSlot)
+            _denoiseByModel[m.Id] = level;
     }
 
     // 工单 49：选档写回记忆槽（齐备档位 → 全局槽；不齐档位 → 各自独立槽），退出时随 OnClosing 落盘；
@@ -300,11 +318,7 @@ public partial class MainWindow : Window
         var dSel = DenoiseBox.SelectedIndex;
         if (dSel < 0 || dSel >= _denoiseLevels.Count)
             return;
-        var m = _models[ModelBox.SelectedIndex];
-        if (m.DenoiseComplete)
-            _denoiseGlobal = _denoiseLevels[dSel];
-        else if (m.SupportsDenoise)
-            _denoiseByModel[m.Id] = _denoiseLevels[dSel];
+        WriteDenoiseMemory(_models[ModelBox.SelectedIndex], _denoiseLevels[dSel]);
     }
 
     // ---- 工单 13 → v0.2.4：质量去滑条，真源为 _quality，输入框失焦规整 ----
@@ -567,12 +581,12 @@ public partial class MainWindow : Window
         s.AddSuffix = _addSuffix;
 
         // 工单 49：降噪记忆 —— 全局槽写当前值，独立槽按已加载模型清单生成（没被用户碰过的模型
-        // 写其默认档，键因此在 setting.ini 里总是可见）；档位不齐但支持降噪的模型才建键，
-        // 键名按 ini 语法回读（见 SettingsStore.IsDenoiseModelIdStorable）
+        // 写其默认档，键因此在 setting.ini 里总是可见）；键名按 ini 语法回读
+        // （见 SettingsStore.IsDenoiseModelIdStorable）
         s.Denoise = _denoiseGlobal;
         foreach (var m in _models)
-            if (m.SupportsDenoise && !m.DenoiseComplete && SettingsStore.IsDenoiseModelIdStorable(m.Id))
-                s.DenoiseByModel[m.Id] = _denoiseByModel.TryGetValue(m.Id, out var lv) ? lv : m.DefaultDenoiseLevel;
+            if (m.HasOwnDenoiseSlot && SettingsStore.IsDenoiseModelIdStorable(m.Id))
+                s.DenoiseByModel[m.Id] = ReadDenoiseMemory(m);
 
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
@@ -626,12 +640,21 @@ public class SettingsStore
     internal static int AddSuffixToIndex(bool addSuffix) => addSuffix ? 0 : 1;
 
     // 工单 49：降噪档位表（**单一定义来源**，照 DownFilterTokens/Labels 模式）——下标 = 档位 + 1
-    // （0 = 自动 = -1 档 … 4 = 高 = 3 档）；界面标签、setting.ini token、引擎取值三处共用，调表不会静默错档
+    // （0 = 自动 = -1 档 …）；界面标签、setting.ini token、引擎取值三处共用
     internal static readonly string[] DenoiseLabels = { "自动", "无", "低", "中", "高" };
     internal static readonly string[] DenoiseTokens = { "auto", "none", "low", "mid", "high" };
 
-    // 档位 → 下标（越界回退「自动」，与 Load 的缺键默认一致）
-    private static int DenoiseIndex(int level) => level >= -1 && level <= 3 ? level + 1 : 0;
+    // 工单 49：档位域由表长派生（下标 = 档位 + 1 → 档位 ∈ [-1, 表长 - 2]）——往表里加档时，
+    // ModelEntry 的可用档位枚举与下面的下标边界自动跟上，不必再改字面量
+    internal static IEnumerable<int> AllDenoiseLevels => Enumerable.Range(-1, DenoiseTokens.Length);
+    internal static int MaxDenoiseLevel => DenoiseTokens.Length - 2;
+
+    // 档位 → 表下标；域外**不静默当「自动」**（lessons §3.11 教训①：值来自另一个集合的查表
+    // 先 find 再取值）。调用点传入的都是经 ModelEntry.IsDenoiseLevelAvailable / Load 校验过的档位，
+    // 域外即代码错误
+    private static int DenoiseIndex(int level) => level >= -1 && level <= MaxDenoiseLevel
+        ? level + 1
+        : throw new ArgumentOutOfRangeException(nameof(level), level, "降噪档位不在档位表内");
 
     internal static string DenoiseLabelOfLevel(int level) => DenoiseLabels[DenoiseIndex(level)];
     internal static string DenoiseTokenOfLevel(int level) => DenoiseTokens[DenoiseIndex(level)];
@@ -811,10 +834,8 @@ public static class EngineClient
                 {
                     var sp2 = val.IndexOf(' ');
                     if (sp2 <= 0) break;
-                    var lvl = val[..sp2] switch
-                    {
-                        "none" => 0, "low" => 1, "mid" => 2, "high" => 3, _ => -1
-                    };
+                    // 工单 49：token → 档位走 SettingsStore 的档位表（与界面/setting.ini 共用一份）
+                    var lvl = SettingsStore.DenoiseLevelOfToken(val[..sp2]);
                     if (lvl >= 0) cur.Denoise[lvl] = val[(sp2 + 1)..];
                     break;
                 }

@@ -95,7 +95,8 @@
                     <TextBlock Text="降噪：" VerticalAlignment="Center"/>
                     <!-- 工单 49：档位默认值与记忆：齐备档位（无/低/中/高）共用一份记忆、默认「自动」；
                          不齐档位（如 realcugan-pro = 无/高）各自独立记忆、默认最高可用档；
-                         不支持降噪的模型灰置固定「无」；项由 SettingsStore.DenoiseLabels 填充 -->
+                         不支持降噪的模型灰置固定「无」；项集由 ModelEntry.DenoiseLevels 按模型能力筛选，
+                         标签文案来自 SettingsStore.DenoiseLabels -->
                     <ComboBox x:Name="DenoiseBox" Width="90" Margin="0,0,6,0" SelectionChanged="OnDenoiseChanged"/>
                     <TextBlock x:Name="DenoiseHint" Text="该模型不支持降噪" Foreground="Gray"
                                VerticalAlignment="Center" Margin="0,0,16,0" Visibility="Collapsed"/>
