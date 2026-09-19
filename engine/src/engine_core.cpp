@@ -91,6 +91,7 @@ static void print_usage()
     log_out("  -t tile-size         tile size (>=32/0=auto, default: 0)\n");
     log_out("  -g gpu-id            gpu device (-1=cpu, default: auto)\n");
     log_out("  --models-dir path    models directory (default: models)\n");
+    log_out("  --no-rename          name the output after the input file (no suffix segment; file input only)\n");
     log_out("  -v                   verbose output\n");
     log_out("  -h                   show this help\n");
 }
@@ -622,13 +623,33 @@ static bool resolve_model_files(const std::wstring& models_dir, const ModelInfo&
 
 // 单文件输出的命名（工单 02 命名规则）
 // SR 路径：A-(模型名)-[nN-]<倍率|尺寸>；直通缩放：A-(Resize)-<尺寸>
+// 工单 50：no_rename 时整段后缀都不加，产物 = A.<输出格式扩展名>（只作用于文件输入）
 static path_t single_file_outpath(const std::filesystem::path& in, const std::wstring& display,
                                   const std::wstring& denoise_seg, const std::wstring& scale_seg,
-                                  const std::wstring& ext, bool direct_resize)
+                                  const std::wstring& ext, bool direct_resize, bool no_rename)
 {
+    if (no_rename)
+        return in.parent_path() / (in.stem().wstring() + L"." + ext);
     if (direct_resize)
         return in.parent_path() / (in.stem().wstring() + L"-(Resize)-" + scale_seg + L"." + ext);
     return in.parent_path() / (in.stem().wstring() + L"-(" + display + L")" + denoise_seg + L"-" + scale_seg + L"." + ext);
+}
+
+// 工单 50 守卫：关闭后缀段时产物路径可能与输入完全相同（A.png + -f png）→ 必须拒绝写盘，
+// 绝不覆盖源图。比较用规范化路径；Windows 文件系统不区分大小写，A.PNG + -f png 也指向
+// 同一个文件，故比较前统一小写化。
+static bool is_same_path_ci(const path_t& a, const path_t& b)
+{
+    path_t ca = std::filesystem::weakly_canonical(a);
+    path_t cb = std::filesystem::weakly_canonical(b);
+    if (ca.size() != cb.size())
+        return false;
+    for (size_t i = 0; i < ca.size(); i++)
+    {
+        if (towlower(ca[i]) != towlower(cb[i]))
+            return false;
+    }
+    return true;
 }
 
 // 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
@@ -641,7 +662,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                      bool target_is_width, bool single_file, const std::wstring& wext,
                      const std::wstring& wdisplay, const std::wstring& denoise_seg,
                      const std::wstring& scale_seg, int tilesize, bool denoise_auto, bool denoise_per_file,
-                     int down_filter, bool verbose)
+                     int down_filter, bool verbose, bool no_rename)
 {
     const int total = (int)input_files.size();
     int done = 0;
@@ -822,7 +843,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         if (single_file)
         {
             std::filesystem::path in(inpath);
-            outpath = single_file_outpath(in, wdisplay, file_denoise_seg, scale_seg, wext, !use_engine);
+            outpath = single_file_outpath(in, wdisplay, file_denoise_seg, scale_seg, wext, !use_engine, no_rename);
         }
         else if (denoise_per_file && use_engine)
         {
@@ -832,6 +853,14 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         else
         {
             outpath = output_files[i] + L"." + wext;
+        }
+
+        // 工单 50：产物与输入同名（关闭后缀段 + 输出格式与输入相同）→ 拒绝写盘；
+        // 该文件不推理、不写盘，按 IO 失败计入（退出码 3），源图绝不被覆盖
+        if (is_same_path_ci(outpath, inpath))
+        {
+            fail(false, "refuse to overwrite input", outpath);
+            continue;
         }
 
         // 放大链（工单 43）：按 plan 逐轮跑模型；每轮确保权重与档位跟当轮原生档匹配。
@@ -1078,6 +1107,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     int gpuid_arg = -1000; // -1000 = auto
     int denoise_level = 0;
     int down_filter = RF_LANCZOS3; // 工单 42：降采样滤镜，默认 Lanczos
+    bool no_rename = false; // 工单 50：产物名不加后缀段（只作用于文件输入）
     bool denoise_auto = false; // AUTO：按文件伪影估计自动选档（工单 06）
     int verbose = 0;
 
@@ -1164,6 +1194,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         {
             models_dir = argv[++i];
             models_dir_given = true;
+        }
+        else if (wcscmp(a, L"--no-rename") == 0)
+        {
+            no_rename = true;
         }
         else if (wcscmp(a, L"-v") == 0)
         {
@@ -1504,7 +1538,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, denoise_per_file,
-                       down_filter, verbose);
+                       down_filter, verbose, no_rename);
     }
     else if (mi->arch == "cugan")
     {
@@ -1512,7 +1546,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, denoise_per_file,
-                       down_filter, verbose);
+                       down_filter, verbose, no_rename);
     }
     else // rrdb | compact
     {
@@ -1520,7 +1554,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         rc = run_files(&engine, models_dir, *mi, denoise_level, input_files, output_files, format,
                        quality, run_scale, target_mode, target_value, target_is_width,
                        single_file, wext, wdisplay, denoise_seg, scale_seg, tilesize, denoise_auto, denoise_per_file,
-                       down_filter, verbose);
+                       down_filter, verbose, no_rename);
     }
 
     ncnn::destroy_gpu_instance();

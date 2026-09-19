@@ -330,6 +330,10 @@ public partial class MainWindow : Window
         var m = _models[ModelBox.SelectedIndex];
         // 工单 27：参数走数组（P/Invoke wchar_t**），无需引号转义；--models-dir 由 GUI 显式传入
         var args = new List<string> { "-i", input, "-m", m.Id, "--models-dir", _modelsDir };
+        // 工单 50：文件输入 + 「文件添加扩展名」关 → 产物用原文件名（不加后缀段）。
+        // 文件夹输入忽略该开关；且灰置时的显示值「开」不代表记忆值，故按 File.Exists + _addSuffix 判断
+        if (File.Exists(input) && !_addSuffix)
+            args.Add("--no-rename");
 
         if (ModeScale.IsChecked == true)
         {
@@ -435,7 +439,10 @@ public partial class MainWindow : Window
             {
                 Dispatcher.Invoke(() =>
                 {
-                    if (line.StartsWith("inference failed: ") || line.StartsWith("decode image failed: ")
+                    if (line.StartsWith("refuse to overwrite input: "))
+                        Log("✘ 拒绝覆盖输入文件（产物与输入同名，请把「文件添加扩展名」设为开）："
+                            + Path.GetFileName(line[(line.IndexOf(':') + 2)..]));
+                    else if (line.StartsWith("inference failed: ") || line.StartsWith("decode image failed: ")
                         || line.StartsWith("encode image failed: "))
                         Log("✘ 失败：" + line[(line.IndexOf(':') + 2)..]);
                     else
