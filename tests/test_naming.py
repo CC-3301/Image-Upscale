@@ -2,7 +2,8 @@
 import pytest
 from PIL import Image
 
-from conftest import MODEL, make_gradient, make_png, needs_engine, psnr, resolved_levels, run_engine
+from conftest import (MODEL, make_gradient, make_gray_jpg, make_png, needs_engine, psnr,
+                      resolved_levels, run_engine)
 
 MODEL_TAG = f"({MODEL})"
 
@@ -120,9 +121,7 @@ def test_no_rename_jpeg_extension_sibling_is_not_same_path(workdir):
     folder = workdir / "B"
     folder.mkdir()
     inp = folder / "A.jpeg"
-    make_png(folder / "A.tmp.png", size=(32, 32))
-    Image.open(folder / "A.tmp.png").save(inp, format="JPEG", quality=90)
-    (folder / "A.tmp.png").unlink()
+    make_gray_jpg(inp, size=(32, 32))  # 真 JPEG：复用 conftest 的夹具 helper，不另起 .tmp.png 中转
     before = inp.read_bytes()
 
     p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--no-rename"])
@@ -163,6 +162,21 @@ def _reference_product(workdir, src):
     return out
 
 
+def _run_in_place(workdir, name):
+    """B/<name>（32×32 夹具）备好参考产物后原地跑一轮 `--no-rename`。
+
+    返回 (目录, 源文件, 参考产物, 引擎结果, 跑前源图字节)。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / name
+    make_png(inp, size=(32, 32))
+    before = inp.read_bytes()
+    ref = _reference_product(workdir, inp)
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--no-rename"])
+    return folder, inp, ref, p, before
+
+
 @needs_engine
 def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
     """关后缀段 + 输出格式与输入相同（工单 58）：目标路径即输入路径 → 原地覆盖源文件
@@ -170,13 +184,8 @@ def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
     夹具 32×32 经 2x 模型得 64×64。尺寸只证明「源文件被替换」，内容才算证明「替换成的是超分结果」
     （同尺寸坏图会全绿），故与同源图的参考产物比 PSNR：实测 99.0 dB（像素级一致），阈值取 40。
     """
-    folder = workdir / "B"
-    folder.mkdir()
-    inp = folder / "A.png"
-    make_png(inp, size=(32, 32))
-    ref = _reference_product(workdir, inp)
+    folder, inp, ref, p, _ = _run_in_place(workdir, "A.png")
 
-    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--no-rename"])
     assert p.returncode == 0, (p.returncode, p.stderr)
     assert " done" in p.stdout, p.stdout
     # 目录内不新增文件：产物就是源文件本身
@@ -190,13 +199,8 @@ def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
 @needs_engine
 def test_no_rename_same_format_uppercase_extension_overwrites_in_place(workdir):
     """扩展名大小写不同也指向同一个文件（Windows 不区分大小写），同样原地覆盖、不新增文件"""
-    folder = workdir / "B"
-    folder.mkdir()
-    inp = folder / "A.PNG"
-    make_png(inp, size=(32, 32))
-    ref = _reference_product(workdir, inp)
+    folder, inp, ref, p, _ = _run_in_place(workdir, "A.PNG")
 
-    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--no-rename"])
     assert p.returncode == 0, (p.returncode, p.stderr)
     # 覆盖写盘不会改动盘上已有的文件名拼写
     assert sorted(x.name for x in folder.iterdir()) == ["A.PNG"]
@@ -252,22 +256,35 @@ def test_no_rename_cyrillic_case_variant_overwrites_in_place(workdir):
     若任一拼写新建了文件，目录内会多出第二个文件，断言随之失败。
     第一轮即与参考产物比 PSNR：内容确为超分结果（实测 99.0 dB），而非同尺寸的别的图。
     """
-    folder = workdir / "B"
-    folder.mkdir()
-    on_disk = folder / "А.PNG"  # 西里尔大写 А + 大写扩展名
-    make_png(on_disk, size=(32, 32))
-    before = on_disk.read_bytes()
-    ref = _reference_product(workdir, on_disk)
+    folder, on_disk, ref, p1, before = _run_in_place(workdir, "А.PNG")  # 西里尔大写 А + 大写扩展名
 
-    # 两种拼写（大写 / 小写西里尔，小写扩展名）都在 NTFS 上解析到同一个文件
-    p1 = run_engine(["-i", folder / "А.PNG", "-f", "png", "-g", "-1", "--no-rename"])
     assert p1.returncode == 0, (p1.returncode, p1.stderr)
     first = Image.open(on_disk).copy()  # 先脱离文件句柄：下一轮要原地重写同一路径
     assert first.size == (64, 64)
     assert psnr(first, Image.open(ref)) >= 40.0
 
+    # 两种拼写（大写 / 小写西里尔，小写扩展名）都在 NTFS 上解析到同一个文件
     p2 = run_engine(["-i", folder / "а.png", "-f", "png", "-g", "-1", "--no-rename"])
     assert p2.returncode == 0, (p2.returncode, p2.stderr)
     assert on_disk.read_bytes() != before
     assert Image.open(on_disk).size == (128, 128)
     assert sorted(x.name for x in folder.iterdir()) == ["А.PNG"]
+
+
+@needs_engine
+def test_no_rename_direct_resize_same_format_overwrites_in_place(workdir):
+    """直通缩放（目标 < 原图）+ 关后缀段 + 同格式：产物路径即输入路径 → 原地覆盖源文件
+
+    直通缩放（目标 32 < 原图 64）不跑模型，走的是另一条命名分支（`A-(Resize)-32x`）：该分支若
+    不落在 no_rename 之后就会多出一个带后缀的产物。故断言目录内只有 `A.png` 且已缩到 32×32。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)  # 64x64
+
+    p = run_engine(["-i", inp, "--width", "32", "-f", "png", "-g", "-1", "--no-rename"])
+    assert p.returncode == 0, (p.returncode, p.stderr)
+    # 没有 -(Resize)-32x 段的新产物：目录内只有源文件本身
+    assert sorted(x.name for x in folder.iterdir()) == ["A.png"]
+    assert Image.open(inp).size == (32, 32)
