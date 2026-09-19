@@ -84,8 +84,9 @@ public partial class MainWindow : Window
     // 原先定义在此处、由 SettingsStore 反向引用 MainWindow，依赖方向是颠倒的
 
     // 工单 51：产物后缀段开关的用户选择（true = 开）。灰置状态下的显示值（「开」）不是用户选择，
-    // 故另存一份记忆值；setting.ini 键 LastAddSuffix（1 = 开，与 v0.2.8 现状一致）
-    private bool _addSuffix = true;
+    // 故另存一份记忆值；setting.ini 键 LastAddSuffix（1 = 开，与 v0.2.8 现状一致）。
+    // 工单 60：默认值引用 SettingsStore.DefaultAddSuffix（单一定义来源）
+    private bool _addSuffix = SettingsStore.DefaultAddSuffix;
     // 程序化切换（灰置跟随 / 恢复记忆值）不写回 _addSuffix，否则文件夹输入时会把灰置值当成用户选择
     private bool _suppressAddSuffixWrite;
 
@@ -351,9 +352,9 @@ public partial class MainWindow : Window
     private void UpdateAddSuffixState()
     {
         var isFile = File.Exists(InputBox.Text);
-        // 显示值：文件输入 = 记忆值；文件夹/空/无效路径 = 「开」（灰置值即实际生效值）
+        // 显示值：文件输入 = 记忆值；文件夹/空/无效路径 = 默认值「开」（灰置值即实际生效值）
         _suppressAddSuffixWrite = true;
-        AddSuffixBox.SelectedIndex = SettingsStore.AddSuffixToIndex(isFile ? _addSuffix : true);
+        AddSuffixBox.SelectedIndex = SettingsStore.AddSuffixToIndex(isFile ? _addSuffix : SettingsStore.DefaultAddSuffix);
         _suppressAddSuffixWrite = false;
         AddSuffixBox.IsEnabled = isFile;
     }
@@ -613,7 +614,7 @@ public class SettingsStore
     // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）
     public string DownFilter = "lanczos";
     // 工单 51：产物名是否带后缀段（true = 开，与 v0.2.8 现状一致；只对文件输入生效）
-    public bool AddSuffix = true;
+    public bool AddSuffix = DefaultAddSuffix;
     // 工单 49：降噪档位记忆 —— Denoise 是档位齐备的模型共用的全局槽（LastDenoise；-1 = 自动）；
     // DenoiseByModel 是档位不齐的模型各自的独立槽（LastDenoise_<modelId>；无键 = 无记录 → 回退默认档）
     public int Denoise = -1;
@@ -632,8 +633,12 @@ public class SettingsStore
     // 界面项由本表填充，序号 ↔ 布尔只经下面两个 helper，调项序不会静默反相）
     internal static readonly string[] AddSuffixLabels = { "开", "关" };
 
-    // 下拉当前选中项 → 是否带后缀段（未选中/越界回退「开」= 现状，与 Load 的非法值回退一致）
-    internal static bool AddSuffixFromIndex(int selectedIndex) => selectedIndex != 1;
+    // 工单 60：「默认开」的**单一定义来源** —— 字段初值、下拉未选中/越界回退、文件夹输入的灰置
+    // 显示值、ini 缺键/非法值回退四处都引用它，默认值的字面量在仓库里只此一处（rg DefaultAddSuffix 可证）
+    internal const bool DefaultAddSuffix = true;
+
+    // 下拉当前选中项 → 是否带后缀段（未选中/越界回退 DefaultAddSuffix，与 Load 的非法值回退一致）
+    internal static bool AddSuffixFromIndex(int selectedIndex) => selectedIndex == 1 ? false : DefaultAddSuffix;
 
     internal static int AddSuffixToIndex(bool addSuffix) => addSuffix ? 0 : 1;
 
@@ -707,7 +712,7 @@ public class SettingsStore
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
             s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : DownFilterTokens[0];
             // 工单 51：失缺/非法值静默回退默认「开」
-            s.AddSuffix = map.TryGetValue("LastAddSuffix", out v) ? v != "0" : true;
+            s.AddSuffix = map.TryGetValue("LastAddSuffix", out v) ? v != "0" : DefaultAddSuffix;
 
             // 工单 49：降噪记忆（全局槽缺键/非法值 → 默认「自动」；独立槽的非法条目丢弃 → 该模型回退默认档）
             s.Denoise = map.TryGetValue("LastDenoise", out v) ? DenoiseLevelOfToken(v) : -1;
