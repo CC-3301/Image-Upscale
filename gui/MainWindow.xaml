@@ -37,14 +37,21 @@
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="浏览…" Width="80" Margin="6,0,0,0" Click="OnBrowse"/>
                 <TextBox x:Name="InputBox" Background="White" Height="28"
+                         TextChanged="OnInputTextChanged"
                          PreviewDragOver="OnInputPreviewDragOver" PreviewDrop="OnInputPreviewDrop"/>
             </DockPanel>
         </GroupBox>
 
-        <!-- 模型（工单 21：A-Z 排序 / 不再显示类型与架构；v0.2.4 移除"现有模型："前缀） -->
+        <!-- 模型（工单 21：A-Z 排序 / 不再显示类型与架构；v0.2.4 移除"现有模型："前缀）
+             工单 51：「降采样方式」从「降噪与输出」行挪到此处，与模型下拉同行
+             工单 42 实测："Catmull-Rom"在 100px 下被裁；实测控件自身开销 28px + 文字 76.1px（微软雅黑 UI 12px）= 104.1px，
+             故下拉宽度定为 106px（115 嫌宽、100 裁字）；本行实测宽度 520px，780×540 窗口内不换行 -->
         <GroupBox Grid.Row="1" Header="模型" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
                 <ComboBox x:Name="ModelBox" Width="320" SelectionChanged="OnModelChanged"/>
+                <TextBlock Text="降采样方式：" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <!-- 工单 42：缩小路径的重采样滤镜（默认 Lanczos）；工单 43：放大不再插值，改由模型多轮完成 -->
+                <ComboBox x:Name="DownFilterBox" Width="106"/>
             </WrapPanel>
         </GroupBox>
 
@@ -61,12 +68,13 @@
             </WrapPanel>
         </GroupBox>
 
-        <!-- 降噪 + 输出 -->
+        <!-- 降噪 + 输出（工单 51：第四组"降采样方式"已挪到「模型」栏，原位改为「文件添加扩展名」开关） -->
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
-            <!-- v0.2.4：三组（降噪/输出格式/输出质量）整体一行不换行（维护者定案）；MinWidth 兑现最坏情况（降噪提示可见）不裁剪
-                 工单 42：新增第四组“降采样方式”（放在输出质量之后），实测最坏情况行宽 758px → MinWidth 780
-                 2026-09-19：“Catmull-Rom”在 100px 下被裁；实测控件自身开销 28px + 文字 76.1px（微软雅黑 UI 12px）= 104.1px，
-                 故下拉宽度定为 106px（行宽 764，MinWidth 780 仍成立；115 嫌宽、100 裁字） -->
+            <!-- v0.2.4：整体一行不换行（维护者定案，用 StackPanel 非 WrapPanel）
+                 工单 42：第四组为“降采样方式”（工单 51 已挪到「模型」栏）
+                 工单 51：第四组改为「文件添加扩展名」下拉；实测（780×540，模型不支持降噪 → 提示可见的）
+                 行宽 716px ≤ 可用宽 720px（GroupBox 736 − 左右 padding 16）→ 不裁剪，MinWidth 780 不变；
+                 下拉宽 72px（“开/关”单字 12px + 控件开销 28px = 40px 即可完整显示，取 72px 与同行下拉观感一致） -->
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="降噪：" VerticalAlignment="Center"/>
@@ -89,9 +97,13 @@
                              TextChanged="OnQualityInputChanged" LostFocus="OnQualityInputLostFocus"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="降采样方式：" VerticalAlignment="Center" Margin="16,0,0,0"/>
-                    <!-- 工单 42：缩小路径的重采样滤镜（默认 Lanczos）；工单 43：放大不再插值，改由模型多轮完成 -->
-                    <ComboBox x:Name="DownFilterBox" Width="106"/>
+                    <TextBlock Text="文件添加扩展名：" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                    <!-- 工单 51：产物名后缀段开关（工单 50 的 no-rename 开关）；只对文件输入生效，
+                         文件夹/空/无效路径时由代码切到「开」并灰置（工单 50 定案 1） -->
+                    <ComboBox x:Name="AddSuffixBox" Width="72" SelectionChanged="OnAddSuffixChanged">
+                        <ComboBoxItem Content="开"/>
+                        <ComboBoxItem Content="关"/>
+                    </ComboBox>
                 </StackPanel>
             </StackPanel>
         </GroupBox>

@@ -49,6 +49,12 @@ public partial class MainWindow : Window
     // 工单 42：降采样滤镜的 token ↔ 标签表已移到 SettingsStore（单一定义来源）——
     // 原先定义在此处、由 SettingsStore 反向引用 MainWindow，依赖方向是颠倒的
 
+    // 工单 51：产物后缀段开关的用户选择（true = 开）。灰置状态下的显示值（「开」）不是用户选择，
+    // 故另存一份记忆值；setting.ini 键 LastAddSuffix（1 = 开，与 v0.2.8 现状一致）
+    private bool _addSuffix = true;
+    // 程序化切换（灰置跟随 / 恢复记忆值）不写回 _addSuffix，否则文件夹输入时会把灰置值当成用户选择
+    private bool _suppressAddSuffixWrite;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -63,6 +69,8 @@ public partial class MainWindow : Window
         foreach (var label in SettingsStore.DownFilterLabels)
             DownFilterBox.Items.Add(label);
         DownFilterBox.SelectedIndex = 0;
+        // 工单 51：后缀开关初始态（输入框还是空 → 非文件输入，显示「开」并灰置）
+        UpdateAddSuffixState();
         RestoreWindowBounds(SettingsStore.Load());
         Loaded += OnLoaded;
     }
@@ -129,6 +137,10 @@ public partial class MainWindow : Window
         var q = (s.OutputQuality >= 0 && s.OutputQuality <= 100) ? s.OutputQuality : 90;
         _quality = q;
         QualityInput.Text = q.ToString();
+
+        // 工单 51：后缀开关（记忆值 + 按当前输入类型刷新生效态）
+        _addSuffix = s.AddSuffix;
+        UpdateAddSuffixState();
     }
 
     // 工单 18：日志区高度上限 = 窗口可用高度的 60%（下限由 XAML MinHeight 保证；
@@ -247,6 +259,28 @@ public partial class MainWindow : Window
         {
             QualityInput.Text = _quality.ToString();
         }
+    }
+
+    // ---- 工单 51：产物后缀段开关 ----
+    // 只对文件输入有意义（工单 50 定案 1）：输入是文件 → 可点并显示记忆值；
+    // 文件夹/空/无效路径 → 显示「开」并灰置（灰置值即实际生效值，不加提示文字）
+    private void OnInputTextChanged(object sender, TextChangedEventArgs e) => UpdateAddSuffixState();
+
+    private void UpdateAddSuffixState()
+    {
+        var isFile = File.Exists(InputBox.Text);
+        _suppressAddSuffixWrite = true;
+        AddSuffixBox.SelectedIndex = isFile && !_addSuffix ? 1 : 0;
+        _suppressAddSuffixWrite = false;
+        AddSuffixBox.IsEnabled = isFile;
+    }
+
+    private void OnAddSuffixChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressAddSuffixWrite)
+            return;
+        // 序号 0 = 开，1 = 关（XAML 里的项序即契约）
+        _addSuffix = AddSuffixBox.SelectedIndex <= 0;
     }
 
     private void OnBrowse(object sender, RoutedEventArgs e)
@@ -454,6 +488,9 @@ public partial class MainWindow : Window
         // 工单 42：降采样滤镜（与模型无关，引擎缺失时也照样记录）
         s.DownFilter = SettingsStore.DownFilterTokenAt(DownFilterBox.SelectedIndex);
 
+        // 工单 51：后缀开关（同样与模型无关；写记忆值而非灰置时的显示值）
+        s.AddSuffix = _addSuffix;
+
         // 工单 25：窗口几何 —— 最大化/最小化时记 RestoreBounds（还原态坐标），否则记当前值
         var wb = WindowState == WindowState.Maximized || WindowState == WindowState.Minimized
             ? RestoreBounds
@@ -480,6 +517,8 @@ public class SettingsStore
     public int OutputQuality = -1;     // -1 = 无记录
     // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）
     public string DownFilter = "lanczos";
+    // 工单 51：产物名是否带后缀段（true = 开，与 v0.2.8 现状一致；只对文件输入生效）
+    public bool AddSuffix = true;
 
     // 工单 42：降采样滤镜的 token ↔ 界面标签（**单一定义来源**；界面项与 setting.ini 校验共用）。
     // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
@@ -526,6 +565,8 @@ public class SettingsStore
             s.OutputExt = map.TryGetValue("LastOutputExt", out v) && v is "jpg" or "png" or "webp" ? v : "jpg";
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
             s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : DownFilterTokens[0];
+            // 工单 51：失缺/非法值静默回退默认「开」
+            s.AddSuffix = map.TryGetValue("LastAddSuffix", out v) ? v != "0" : true;
 
             // 工单 25：窗口几何
             s.WindowLeft = map.TryGetValue("LastWindowLeft", out v) && int.TryParse(v, out var nl) ? nl : int.MinValue;
@@ -557,6 +598,7 @@ public class SettingsStore
             sb.AppendLine($"LastOutputExt={s.OutputExt}");
             sb.AppendLine($"LastOutputQuality={s.OutputQuality}");
             sb.AppendLine($"LastDownFilter={s.DownFilter}");
+            sb.AppendLine($"LastAddSuffix={(s.AddSuffix ? 1 : 0)}");
             // 工单 25：窗口几何
             sb.AppendLine($"LastWindowLeft={s.WindowLeft}");
             sb.AppendLine($"LastWindowTop={s.WindowTop}");
