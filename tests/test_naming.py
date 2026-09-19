@@ -149,15 +149,19 @@ def test_no_rename_direct_resize_omits_resize_segment(workdir):
 
 # ---- 工单 58：关后缀段 + 输出格式与输入相同 → 原地覆盖源文件 ----
 
-def _reference_product(workdir, src):
-    """同源图带后缀段跑一次 → 参考产物（断言原地覆盖的「内容是超分结果」时作对比基准）"""
+def _reference_product(workdir, src, args=(), name=None):
+    """同源图带后缀段跑一次 → 参考产物（断言原地覆盖的「内容是超分结果」时作对比基准）
+
+    args：参考跑额外参数（直通缩放需带 --width/--height）；name：参考产物文件名
+    （直通缩放走 `-(Resize)-` 命名段，与 SR 路径不同）。
+    """
     refdir = workdir / "ref"
     refdir.mkdir(exist_ok=True)
     refsrc = refdir / src.name
     refsrc.write_bytes(src.read_bytes())
-    p = run_engine(["-i", refsrc, "-f", "png", "-g", "-1"])
+    p = run_engine(["-i", refsrc, "-f", "png", "-g", "-1", *args])
     assert p.returncode == 0, p.stderr
-    out = refdir / f"{refsrc.stem}-{MODEL_TAG}-n0-2.0x.png"
+    out = refdir / (name or f"{refsrc.stem}-{MODEL_TAG}-n0-2.0x.png")
     assert out.exists(), sorted(x.name for x in refdir.iterdir())
     return out
 
@@ -276,15 +280,21 @@ def test_no_rename_direct_resize_same_format_overwrites_in_place(workdir):
     """直通缩放（目标 < 原图）+ 关后缀段 + 同格式：产物路径即输入路径 → 原地覆盖源文件
 
     直通缩放（目标 32 < 原图 64）不跑模型，走的是另一条命名分支（`A-(Resize)-32x`）：该分支若
-    不落在 no_rename 之后就会多出一个带后缀的产物。故断言目录内只有 `A.png` 且已缩到 32×32。
+    不落在 no_rename 之后就会多出一个带后缀的产物。尺寸只证明「源文件被替换」，内容才算证明
+    「替换成的是直通缩放结果」，故与「同参数但不带 --no-rename」的参考产物比 PSNR（实测 99.0 dB）。
     """
     folder = workdir / "B"
     folder.mkdir()
     inp = folder / "A.png"
     make_png(inp)  # 64x64
+    ref = _reference_product(workdir, inp, args=["--width", "32"],
+                             name=f"{inp.stem}-(Resize)-32x.png")
 
     p = run_engine(["-i", inp, "--width", "32", "-f", "png", "-g", "-1", "--no-rename"])
     assert p.returncode == 0, (p.returncode, p.stderr)
     # 没有 -(Resize)-32x 段的新产物：目录内只有源文件本身
     assert sorted(x.name for x in folder.iterdir()) == ["A.png"]
-    assert Image.open(inp).size == (32, 32)
+    img = Image.open(inp)
+    assert img.format == "PNG"
+    assert img.size == (32, 32)
+    assert psnr(img, Image.open(ref)) >= 40.0
