@@ -99,16 +99,19 @@ public partial class MainWindow : Window
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/assets/app.ico", UriKind.Absolute));
         // 工单 25/37：几何恢复必须在显示之前（Loaded 时窗口已渲染，先闪默认位再跳走）；
         // 引擎定位与其余设置恢复仍在 OnLoaded
-        // 工单 42：降采样下拉（与模型无关的固定档位表；默认项 = Lanczos）
+        // 工单 42：降采样下拉（与模型无关的固定档位表）
         foreach (var label in SettingsStore.DownFilterLabels)
             DownFilterBox.Items.Add(label);
-        DownFilterBox.SelectedIndex = 0;
         // 工单 51：后缀开关（项由 SettingsStore.AddSuffixLabels 单一来源填充；与模型无关，
         // 故记忆值在构造函数这里读就定下来 —— OnLoaded/RestoreSettings 在 models 缺失时会早退，
         // 若只在那里赋值，“关闭时写回”会拿初值把用户存的「关」抹成「开」）
         foreach (var label in SettingsStore.AddSuffixLabels)
             AddSuffixBox.Items.Add(label);
         var s = SettingsStore.Load();
+        // 工单 59：降采样滤镜的记忆值同样在此读定（理由同 51：RestoreSettings 在 models 缺失/
+        // 清单为空时早退，只在那里赋值会让 OnClosing 拿初值 Lanczos 把用户存的 Box 抹掉）
+        var dfIdx = Array.IndexOf(SettingsStore.DownFilterTokens, s.DownFilter);
+        DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : 0;
         _addSuffix = s.AddSuffix;
         // 工单 49：降噪记忆初值 —— 与后缀开关同理（RestoreSettings 在 models 缺失时早退，
         // 若只在那里读，“退出时写回”会拿初值把用户存的档位抹成默认）
@@ -174,9 +177,7 @@ public partial class MainWindow : Window
         var fmtIdx = s.OutputExt switch { "jpg" => 0, "png" => 1, "webp" => 2, _ => 0 };
         FormatBox.SelectedIndex = fmtIdx;
 
-        // 工单 42：降采样滤镜（未记录/非法值 → 默认 Lanczos）
-        var dfIdx = Array.IndexOf(SettingsStore.DownFilterTokens, s.DownFilter);
-        DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : 0;
+        // 工单 59：降采样滤镜已移到构造函数恢复（与「models 是否加载成功」解耦），此处不再重复
 
         // 质量：真源为输入框（v0.2.4 去滑条），非法存储值回退默认 90
         var q = (s.OutputQuality >= 0 && s.OutputQuality <= 100) ? s.OutputQuality : 90;
