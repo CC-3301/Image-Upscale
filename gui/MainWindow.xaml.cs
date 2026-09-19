@@ -97,7 +97,8 @@ public partial class MainWindow : Window
         RestoreSettings(s);
         // 工单 37：窗口几何已改在构造函数显示前恢复，此处不再重复
 
-        Log($"引擎就绪，已加载 {_models.Count} 个模型");  // 工单 33：启动完成后日志只此一条
+        // 工单 33：启动完成后日志只此一条；工单 52：文案不带「引擎」二字，勿再「补齐」
+        Log($"就绪，已加载 {_models.Count} 个模型");
     }
 
     // 恢复尺寸模式 / 倍率 / 宽高 / 格式 / 质量（模型选择已完成，OnModelChanged 已跑过）
