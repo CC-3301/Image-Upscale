@@ -112,7 +112,7 @@ public partial class MainWindow : Window
         // 工单 59：降采样滤镜的记忆值同样在此读定（理由同 51：RestoreSettings 在 models 缺失/
         // 清单为空时早退，只在那里赋值会让 OnClosing 拿初值 Lanczos 把用户存的 Box 抹掉）
         var dfIdx = Array.IndexOf(SettingsStore.DownFilterTokens, s.DownFilter);
-        DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : 0;
+        DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : SettingsStore.DefaultDownFilterIndex;
         _addSuffix = s.AddSuffix;
         // 工单 49：降噪记忆初值 —— 与后缀开关同理（RestoreSettings 在 models 缺失时早退，
         // 若只在那里读，“退出时写回”会拿初值把用户存的档位抹成默认）
@@ -619,8 +619,9 @@ public class SettingsStore
     public int ScaleHeight;
     public string OutputExt = "jpg";
     public int OutputQuality = -1;     // -1 = 无记录
-    // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）
-    public string DownFilter = "lanczos";
+    // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）；
+    // 默认项见 DefaultDownFilterIndex（工单 59）
+    public string DownFilter = DownFilterTokens[DefaultDownFilterIndex];
     // 工单 51：产物名是否带后缀段（true = 开，与 v0.2.8 现状一致；只对文件输入生效）
     public bool AddSuffix = DefaultAddSuffix;
     // 工单 49：降噪档位记忆 —— Denoise 是档位齐备的模型共用的全局槽（LastDenoise；-1 = 自动）；
@@ -633,9 +634,14 @@ public class SettingsStore
     internal static readonly string[] DownFilterTokens = { "lanczos", "catmullrom", "bicubic", "box" };
     internal static readonly string[] DownFilterLabels = { "Lanczos", "Catmull-Rom", "Bicubic", "Box" };
 
-    // 下拉当前选中项 → 引擎 token（未选中/越界回退第 0 项 Lanczos，与引擎侧以 0 为默认一致）
+    // 工单 59：「默认 Lanczos」的**单一定义来源** —— 默认项 = 表第 0 项（与引擎侧以 0 为默认一致）。
+    // 字段初值、ini 未命中回退、token 取值的越界回退、界面恢复的越界回退四处都指向它，
+    // 「默认项」的字面量只此一处；界面标签的 "Lanczos"（DownFilterLabels[0]）是显示名，另一回事
+    internal const int DefaultDownFilterIndex = 0;
+
+    // 下拉当前选中项 → 引擎 token（未选中/越界回退默认项，与引擎侧以 0 为默认一致）
     internal static string DownFilterTokenAt(int selectedIndex)
-        => DownFilterTokens[selectedIndex >= 0 && selectedIndex < DownFilterTokens.Length ? selectedIndex : 0];
+        => DownFilterTokens[selectedIndex >= 0 && selectedIndex < DownFilterTokens.Length ? selectedIndex : DefaultDownFilterIndex];
 
     // 工单 51：后缀开关的项 ↔ 语义（**单一定义来源**，照 DownFilterTokens/Labels 模式；
     // 界面项由本表填充，序号 ↔ 布尔只经下面两个 helper，调项序不会静默反相）
@@ -721,7 +727,7 @@ public class SettingsStore
             s.ScaleHeight = TryPositiveInt(map, "LastScaleHeight");
             s.OutputExt = map.TryGetValue("LastOutputExt", out v) && v is "jpg" or "png" or "webp" ? v : "jpg";
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
-            s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : DownFilterTokens[0];
+            s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : DownFilterTokens[DefaultDownFilterIndex];
             // 工单 51：失缺/非法值静默回退默认「开」
             s.AddSuffix = map.TryGetValue("LastAddSuffix", out v) ? v != "0" : DefaultAddSuffix;
 
