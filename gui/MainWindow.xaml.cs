@@ -645,8 +645,11 @@ public class SettingsStore
     // 显示值、ini 缺键/非法值回退四处都引用它，默认值的字面量在仓库里只此一处（rg DefaultAddSuffix 可证）
     internal const bool DefaultAddSuffix = true;
 
-    // 下拉当前选中项 → 是否带后缀段（未选中/越界回退 DefaultAddSuffix，与 Load 的非法值回退一致）
-    internal static bool AddSuffixFromIndex(int selectedIndex) => selectedIndex == 1 ? false : DefaultAddSuffix;
+    // 下拉当前选中项 → 是否带后缀段：指到表内的项（0 = 开 / 1 = 关）按表判，**未选中/越界才回退
+    // DefaultAddSuffix**（与 Load 的非法值回退一致）—— 回退分支不吞合法项，默认值翻转也不改表内语义。
+    // 与 AddSuffixToIndex 在 0 / 1 两态上互为逆
+    internal static bool AddSuffixFromIndex(int selectedIndex)
+        => selectedIndex >= 0 && selectedIndex < AddSuffixLabels.Length ? selectedIndex == 0 : DefaultAddSuffix;
 
     internal static int AddSuffixToIndex(bool addSuffix) => addSuffix ? 0 : 1;
 
