@@ -12,9 +12,10 @@
 
 ### Build / test / package 速查
 
-- 引擎构建：`scripts\engine-build.bat`（标准 VS 安装零配置；便携/非标准 MSVC 设 `IU_VS_PATH`，勿手写编译命令）
+- 引擎构建：`scripts\engine-build.bat`（标准 VS 安装零配置；便携/非标准 MSVC 设 `IU_VS_PATH`，勿手写编译命令）。判定法：该目录下要有 `VC\Auxiliary\Build\vcvars64.bat`；cmake 找不到时另设 `IU_CMAKE`
 - 测试：先 `set IU_ENGINE=<仓库>\bld\image-upscale.exe`，再 `python -m pytest tests -q`（conftest 默认路径在本布局不存在；lessons §4）
-- 打包：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；非标准 dotnet 安装设 `IU_DOTNET`；重新发布用新版本号，不删旧包）
+- 打包：`pwsh -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`；重新发布用新版本号，不删旧包）。非标准 dotnet 安装设 `IU_DOTNET`，指向的 `dotnet.exe` 必须能 `--list-sdks` 列出 8.x（PATH 上的常只有运行时）
+- **本机覆盖值不入库**：某台机器需要固定的 `IU_VS_PATH` / `IU_CMAKE` / `IU_DOTNET` / `VULKAN_SDK` 时，写在本机笔记 `.pi/local-env.md`（`.gitignore` 已覆盖 `.pi/`，不随仓库公开），不要写进本文件或其它公开文档。
 - **临时文件统一放仓库根**：构建、测试、发布与会话产生的中间物一律放在**仓库根目录**（命名 `.tmp-<用途>` 或 `.tmp-<用途>.<ext>`，`.gitignore` 的 `.tmp-*` 已覆盖），不要写到盘符根目录或系统/自定义 tmp 目录；仓库外已产生的临时文件用完即清。
 
 **记忆维护规则（`AGENTS.md` 本文件与 `docs/lessons.md`）**：
