@@ -635,50 +635,6 @@ static path_t single_file_outpath(const std::filesystem::path& in, const std::ws
     return in.parent_path() / (in.stem().wstring() + L"-(" + display + L")" + denoise_seg + L"-" + scale_seg + L"." + ext);
 }
 
-// 工单 50：忽略大小写的路径串比较（序号式，不依赖进程 locale —— setlocale(LC_ALL, "") 会让
-// towlower 跟着 locale 走）。Windows 用 CompareStringOrdinal；非 Windows 逐字节折叠 ASCII。
-static bool path_equal_ci(const path_t& a, const path_t& b)
-{
-    if (a.size() != b.size())
-        return false;
-#if _WIN32
-    return CompareStringOrdinal(a.c_str(), (int)a.size(), b.c_str(), (int)b.size(), TRUE) == CSTR_EQUAL;
-#else
-    // 非 Windows 的 path_t 是 std::string（见 filesystem_utils.h），逐字节折叠 ASCII 大小写；
-    // 不用 std::tolower/宽字符版本：前者同样跟 locale 走，后者在 char 上类型不匹配
-    for (size_t i = 0; i < a.size(); i++)
-    {
-        const unsigned char x = (unsigned char)a[i];
-        const unsigned char y = (unsigned char)b[i];
-        const unsigned char lx = (x >= 'A' && x <= 'Z') ? (unsigned char)(x - 'A' + 'a') : x;
-        const unsigned char ly = (y >= 'A' && y <= 'Z') ? (unsigned char)(y - 'A' + 'a') : y;
-        if (lx != ly)
-            return false;
-    }
-    return true;
-#endif
-}
-
-// 工单 50 守卫：产物路径与输入路径指向同一个文件时拒绝写盘，绝不覆盖源图。
-// 可达范围（解释只此一处，调用点只做 single_file 门控）：只有单文件模式能命中 —— 带后缀名时
-// 产物名恒比输入名长（stem + 后缀段），目录模式的产物落在新建的带后缀输出目录里。故实际唯一
-// 触发场景 = 关闭后缀段（--no-rename）且输出格式与输入同名（A.png + -f png）。
-// 比较先规范化（相对路径、`.`/`..`、盘上真实大小写），再按 path_equal_ci 忽略大小写：Windows
-// 文件系统默认不区分大小写，A.PNG 与 A.png 是同一个文件。weakly_canonical 用 error_code 重载：
-// 守卫不得给 DLL 导出面新增异常路径（lessons §1）。规范化失败（拿不到 canonical）时回退为直接
-// 比较两条原始路径串 —— 既不中止，也不放行同名写盘：放行就等于把源图写坏。
-static bool is_same_path_ci(const path_t& a, const path_t& b)
-{
-    std::error_code ec;
-    const path_t ca = std::filesystem::weakly_canonical(a, ec);
-    if (ec)
-        return path_equal_ci(a, b);
-    const path_t cb = std::filesystem::weakly_canonical(b, ec);
-    if (ec)
-        return path_equal_ci(a, b);
-    return path_equal_ci(ca, cb);
-}
-
 // 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
 // 引擎类只需提供 process(in, out) const；模板避免多套重复代码
 template <typename Engine>
@@ -882,13 +838,11 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             outpath = output_files[i] + L"." + wext;
         }
 
-        // 工单 50：产物与输入同名 → 拒绝写盘（该文件不推理、不写盘，按 IO 失败计入，退出码 3）。
-        // 可达范围与比较口径见 is_same_path_ci 头注释（单一来源）
-        if (single_file && is_same_path_ci(outpath, inpath))
-        {
-            fail(false, "refuse to overwrite input", outpath);
-            continue;
-        }
+        // 工单 58：关闭后缀段且输出格式与输入扩展名相同时（A.png + -f png），产物路径即输入路径
+        // → 直接原地覆盖源文件，与 spec 用户故事 18「同名直接覆盖」一致，不再有例外（工单 50 定案 4
+        // 的拒写守卫已撤销：无二次确认、无提示、不备份源图）。
+        // 原地覆盖的安全性：输入在解码阶段一次性读入内存后立即 fclose（本函数上方解码块），写盘发生在
+        // 推理/直通缩放与 alpha 合成之后，中途不再读输入路径 —— 不存在「写到一半又被读」的通路。
 
         // 放大链（工单 43）：按 plan 逐轮跑模型；每轮确保权重与档位跟当轮原生档匹配。
         // 轮与轮之间不插值，放大完全由模型完成（对齐 waifu2x 的循环放大 + 收尾缩小）。

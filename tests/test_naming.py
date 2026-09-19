@@ -123,32 +123,35 @@ def test_no_rename_direct_resize_omits_resize_segment(workdir):
 
 
 @needs_engine
-def test_no_rename_same_output_format_refuses_overwrite(workdir):
-    """守卫：产物路径与输入路径相同（A.png + -f png）时必须拒绝写盘，源图原封不动"""
+def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
+    """关后缀段 + 输出格式与输入相同（工单 58）：目标路径即输入路径 → 原地覆盖源文件
+
+    夹具 32×32 经 2x 模型得 64×64：尺寸变化即证明源文件被替换为超分结果，而不是原样留存。
+    """
     inp = workdir / "A.png"
-    make_png(inp)
-    before = inp.read_bytes()
+    make_png(inp, size=(32, 32))
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--no-rename"])
-    assert p.returncode == 3, (p.returncode, p.stderr)
-    assert "refuse to overwrite input" in p.stderr, p.stderr
-    assert inp.read_bytes() == before
+    assert p.returncode == 0, (p.returncode, p.stderr)
+    assert " done" in p.stdout, p.stdout
+    # 目录内不新增文件：产物就是源文件本身
     assert sorted(x.name for x in workdir.iterdir()) == ["A.png"]
-    assert " done" not in p.stdout
+    img = Image.open(inp)
+    assert img.format == "PNG"
+    assert img.size == (64, 64)
 
 
 @needs_engine
-def test_no_rename_same_format_uppercase_extension_refuses_overwrite(workdir):
-    """扩展名大小写不同也指向同一个文件（Windows 不区分大小写），同样拒绝写盘"""
+def test_no_rename_same_format_uppercase_extension_overwrites_in_place(workdir):
+    """扩展名大小写不同也指向同一个文件（Windows 不区分大小写），同样原地覆盖、不新增文件"""
     inp = workdir / "A.PNG"
-    make_png(inp)
-    before = inp.read_bytes()
+    make_png(inp, size=(32, 32))
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--no-rename"])
-    assert p.returncode == 3, (p.returncode, p.stderr)
-    assert "refuse to overwrite input" in p.stderr, p.stderr
-    assert inp.read_bytes() == before
+    assert p.returncode == 0, (p.returncode, p.stderr)
+    # 覆盖写盘不会改动盘上已有的文件名拼写
     assert sorted(x.name for x in workdir.iterdir()) == ["A.PNG"]
+    assert Image.open(inp).size == (64, 64)
 
 
 @needs_engine
@@ -192,22 +195,19 @@ def test_no_rename_keeps_auto_mixed_level_segments(workdir):
 
 
 @needs_engine
-def test_no_rename_same_format_cyrillic_case_variant_refuses_overwrite(workdir):
-    """关闭后缀段 + 扩展名大小写变体（同一个文件）→ 拒写、源图字节不变。
+def test_no_rename_cyrillic_case_variant_overwrites_in_place(workdir):
+    """非 ASCII 文件名 + 两种拼写变体（NTFS 上同一个文件）→ 均原地覆盖，不新增文件。
 
-    守护的是「关后缀 + 输出格式与输入同名」这条守卫在拼写变体下仍然命中：NTFS 上 А.PNG 与
-    А.png 是同一个文件，两种拼写都必须拒绝写盘。
-    不以「非 ASCII 大小写折叠与 locale 无关」为守护对象：产物名取自同一条输入路径（stem 与
-    父目录同源），两条比较串只可能差在 -f 决定的 ASCII 扩展名上，weakly_canonical 也会把
-    同一文件解析回盘上真实大小写 —— 折叠实现改不改都绿，故本用例不是红→绿证明（lessons §3.2/§3.5）。
+    两轮各放大 2 倍（32 → 64 → 128）：只有两种拼写都写到同一个文件才会得到 128×128；
+    若任一拼写新建了文件，目录内会多出第二个文件，断言随之失败。
     """
     on_disk = workdir / "А.PNG"  # 西里尔大写 А + 大写扩展名
-    make_png(on_disk)
+    make_png(on_disk, size=(32, 32))
+    before = on_disk.read_bytes()
     # 两种拼写（大写 / 小写西里尔，小写扩展名）都在 NTFS 上解析到同一个文件
     for typed in ("А.PNG", "а.png"):
-        before = on_disk.read_bytes()
         p = run_engine(["-i", workdir / typed, "-f", "png", "-g", "-1", "--no-rename"])
-        assert p.returncode == 3, (typed, p.returncode, p.stderr)
-        assert "refuse to overwrite input" in p.stderr, p.stderr
-        assert on_disk.read_bytes() == before
+        assert p.returncode == 0, (typed, p.returncode, p.stderr)
+    assert on_disk.read_bytes() != before
+    assert Image.open(on_disk).size == (128, 128)
     assert sorted(x.name for x in workdir.iterdir()) == ["А.PNG"]

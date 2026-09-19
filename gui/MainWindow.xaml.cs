@@ -517,10 +517,7 @@ public partial class MainWindow : Window
             {
                 Dispatcher.Invoke(() =>
                 {
-                    if (line.StartsWith("refuse to overwrite input: "))
-                        Log("✘ 拒绝覆盖输入文件（产物与输入同名，请把「文件添加扩展名」设为开）："
-                            + Path.GetFileName(line[(line.IndexOf(':') + 2)..]));
-                    else if (line.StartsWith("inference failed: ") || line.StartsWith("decode image failed: ")
+                    if (line.StartsWith("inference failed: ") || line.StartsWith("decode image failed: ")
                         || line.StartsWith("encode image failed: "))
                         Log("✘ 失败：" + line[(line.IndexOf(':') + 2)..]);
                     else
