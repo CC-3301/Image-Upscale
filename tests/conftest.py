@@ -99,6 +99,24 @@ def make_gray_jpg(path, size=(64, 64)):
     path.with_suffix(".tmp.png").unlink()
 
 
+def make_gradient(path, size=(200, 140)):
+    """连续色调渐变图（AUTO 估计用：干净 = 0 档；重压缩后非 0 档）"""
+    w, h = size
+    img = Image.new("RGB", (w, h))
+    px = img.load()
+    for y in range(h):
+        for x in range(w):
+            px[x, y] = (x * 255 // (w - 1), y * 255 // (h - 1), 128)
+    img.save(path)
+    return img
+
+
+def resolved_levels(stderr):
+    """从引擎 stderr 取 AUTO 逐文件解析出的降噪档位（按处理顺序）"""
+    return [int(l.split("auto resolved level=")[1])
+            for l in stderr.splitlines() if "auto resolved level=" in l]
+
+
 @pytest.fixture
 def workdir(tmp_path):
     return tmp_path

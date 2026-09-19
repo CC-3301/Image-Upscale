@@ -2,7 +2,7 @@
 import pytest
 from PIL import Image
 
-from conftest import MODEL, make_png, needs_engine, run_engine
+from conftest import MODEL, make_gradient, make_png, needs_engine, resolved_levels, run_engine
 
 MODEL_TAG = f"({MODEL})"
 
@@ -92,22 +92,6 @@ def test_progress_lines_on_stdout(workdir):
 
 # ---- 工单 50：关闭后缀段（--no-rename，只作用于文件输入）----
 
-def _make_gradient(path, size=(200, 140)):
-    """AUTO 估计用的连续色调图（干净 = 0 档；重压缩后非 0 档）"""
-    w, h = size
-    img = Image.new("RGB", (w, h))
-    px = img.load()
-    for y in range(h):
-        for x in range(w):
-            px[x, y] = (x * 255 // (w - 1), y * 255 // (h - 1), 128)
-    img.save(path)
-
-
-def _resolved_levels(stderr):
-    return [int(l.split("auto resolved level=")[1])
-            for l in stderr.splitlines() if "auto resolved level=" in l]
-
-
 @needs_engine
 def test_no_rename_file_input_uses_original_name(workdir):
     """文件输入 + --no-rename：产物 = 源文件同目录 + 原文件名 + 输出格式扩展名（无任何后缀段）"""
@@ -189,15 +173,15 @@ def test_no_rename_keeps_auto_mixed_level_segments(workdir):
     """目录 + --no-rename + AUTO 档位不一致：目录名仍写 nX，内部仍各补 -nN（工单 39 不回归）"""
     folder = workdir / "mixed"
     folder.mkdir()
-    _make_gradient(folder / "a.png")  # 干净 → 0 档
+    make_gradient(folder / "a.png")  # 干净 → 0 档
     dirty = folder / "b.jpg"
-    _make_gradient(dirty)
+    make_gradient(dirty)
     Image.open(dirty).save(dirty, quality=10)  # 重压缩伪影 → 非 0 档
 
     p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto",
                     "-f", "png", "-g", "-1", "-v", "--no-rename"])
     assert p.returncode == 0, p.stderr
-    levels = _resolved_levels(p.stderr)
+    levels = resolved_levels(p.stderr)
     # 顺序守卫：夹具必须保持档位不一致，否则本用例会空转通过
     assert len(levels) == 2 and levels[0] != levels[1], levels
 
@@ -205,3 +189,22 @@ def test_no_rename_keeps_auto_mixed_level_segments(workdir):
     assert outdir.is_dir()
     expected = [f"{stem}-n{level}.png" for stem, level in zip(("a", "b"), levels)]
     assert sorted(x.name for x in outdir.iterdir()) == sorted(expected)
+
+
+@needs_engine
+def test_no_rename_same_format_cyrillic_case_variant_refuses_overwrite(workdir):
+    """非 ASCII 大小写变体（西里尔 А / а）也指向同一个文件：NTFS 上 А.PNG 与 А.png 同路径。
+
+    守卫的大小写折叠若跟着进程 locale 走（towlower + setlocale(LC_ALL,"")），非 ASCII
+    大小写映射就不可靠 → 漏检即写回源图。折叠改走序号比较（CompareStringOrdinal）后与 locale 无关。
+    """
+    on_disk = workdir / "А.PNG"  # 西里尔大写 А + 大写扩展名
+    make_png(on_disk)
+    # 两种拼写（大写 / 小写西里尔，小写扩展名）都在 NTFS 上解析到同一个文件
+    for typed in ("А.PNG", "а.png"):
+        before = on_disk.read_bytes()
+        p = run_engine(["-i", workdir / typed, "-f", "png", "-g", "-1", "--no-rename"])
+        assert p.returncode == 3, (typed, p.returncode, p.stderr)
+        assert "refuse to overwrite input" in p.stderr, p.stderr
+        assert on_disk.read_bytes() == before
+    assert sorted(x.name for x in workdir.iterdir()) == ["А.PNG"]

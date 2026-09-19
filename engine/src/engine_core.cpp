@@ -635,21 +635,37 @@ static path_t single_file_outpath(const std::filesystem::path& in, const std::ws
     return in.parent_path() / (in.stem().wstring() + L"-(" + display + L")" + denoise_seg + L"-" + scale_seg + L"." + ext);
 }
 
-// 工单 50 守卫：关闭后缀段时产物路径可能与输入完全相同（A.png + -f png）→ 必须拒绝写盘，
-// 绝不覆盖源图。比较用规范化路径；Windows 文件系统不区分大小写，A.PNG + -f png 也指向
-// 同一个文件，故比较前统一小写化。
+// 工单 50 守卫：产物路径与输入路径指向同一个文件时拒绝写盘，绝不覆盖源图。
+// 可达范围（与 spec.md 命名规则段、调用点注释三方一致）：只有单文件模式能命中 —— 带后缀名时
+// 产物名恒比输入名长（stem + 后缀段），目录模式的产物落在新建的带后缀输出目录里。故实际唯一
+// 触发场景 = 关闭后缀段（--no-rename）且输出格式与输入同名（A.png + -f png）。
+// 比较用规范化路径；大小写不敏感：Windows 文件系统默认不区分大小写，A.PNG 与 A.png 是同一个文件。
+// 折叠走 CompareStringOrdinal（序号比较、忽略大小写、与进程 locale 无关）：towlower 跟着
+// setlocale(LC_ALL, "") 选的 locale 走，非 ASCII 大小写映射不可靠。
+// weakly_canonical 用 error_code 重载并 fail-open（拿不到 canonical 即视为不同路径、不拦截）：
+// 守卫不得给 DLL 导出面新增异常路径（lessons §1：异常不得逃出导出面）。
 static bool is_same_path_ci(const path_t& a, const path_t& b)
 {
-    path_t ca = std::filesystem::weakly_canonical(a);
-    path_t cb = std::filesystem::weakly_canonical(b);
+    std::error_code ec;
+    const path_t ca = std::filesystem::weakly_canonical(a, ec);
+    if (ec)
+        return false;
+    const path_t cb = std::filesystem::weakly_canonical(b, ec);
+    if (ec)
+        return false;
     if (ca.size() != cb.size())
         return false;
+#if _WIN32
+    return CompareStringOrdinal(ca.c_str(), (int)ca.size(), cb.c_str(), (int)cb.size(), TRUE) == CSTR_EQUAL;
+#else
+    // 非 Windows：保留按字符折叠的实现（C 运行时的大小写映射在该分支的预期平台上可用）
     for (size_t i = 0; i < ca.size(); i++)
     {
         if (towlower(ca[i]) != towlower(cb[i]))
             return false;
     }
     return true;
+#endif
 }
 
 // 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
@@ -855,9 +871,11 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             outpath = output_files[i] + L"." + wext;
         }
 
-        // 工单 50：产物与输入同名（关闭后缀段 + 输出格式与输入相同）→ 拒绝写盘；
-        // 该文件不推理、不写盘，按 IO 失败计入（退出码 3），源图绝不被覆盖
-        if (is_same_path_ci(outpath, inpath))
+        // 工单 50：产物与输入同名 → 拒绝写盘（该文件不推理、不写盘，按 IO 失败计入，退出码 3）。
+        // 条件里的 single_file 只是把不可达情形写明白：带后缀名时产物名恒比输入名长，目录模式产物
+        // 落在新建的带后缀输出目录里，两者都不可能命中；实际唯一触发场景 = 关闭后缀段
+        // （--no-rename）且输出格式与输入同名（A.png + -f png）。
+        if (single_file && is_same_path_ci(outpath, inpath))
         {
             fail(false, "refuse to overwrite input", outpath);
             continue;

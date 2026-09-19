@@ -2,20 +2,9 @@
 import pytest
 from PIL import Image
 
-from conftest import make_png, needs_engine, run_engine
+from conftest import make_gradient, make_png, needs_engine, resolved_levels, run_engine
 
 
-def make_gradient(path, size=(200, 140)):
-    w, h = size
-    img = Image.new("RGB", (w, h))
-    px = img.load()
-    for y in range(h):
-        for x in range(w):
-            px[x, y] = (x * 255 // (w - 1), y * 255 // (h - 1), 128)
-    img.save(path)
-
-
-@needs_engine
 def test_auto_clean_image_resolves_level0(workdir):
     inp = workdir / "clean.png"
     make_gradient(inp)
@@ -75,11 +64,6 @@ def test_auto_multi_scale_model_works(workdir):
     assert p.returncode == 0, p.stderr
 
 
-def _resolved_levels(stderr):
-    return [int(l.split("auto resolved level=")[1])
-            for l in stderr.splitlines() if "auto resolved level=" in l]
-
-
 @needs_engine
 def test_auto_folder_uniform_level_folder_uses_it_and_keeps_names(workdir):
     """工单 39：全批档位一致 → 目录名写该档位，内部文件名原样镜像"""
@@ -89,7 +73,7 @@ def test_auto_folder_uniform_level_folder_uses_it_and_keeps_names(workdir):
     make_gradient(folder / "b.png")
     p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto", "-f", "png", "-g", "-1", "-v"])
     assert p.returncode == 0, p.stderr
-    assert _resolved_levels(p.stderr) == [0, 0]
+    assert resolved_levels(p.stderr) == [0, 0]
     outdir = workdir / "manga-(waifu2x_cunet)-n0-2.0x"
     assert outdir.is_dir()
     assert sorted(x.name for x in outdir.iterdir()) == ["a.png", "b.png"]
@@ -107,7 +91,7 @@ def test_auto_folder_uniform_nonzero_level(workdir):
 
     p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto", "-f", "png", "-g", "-1", "-v"])
     assert p.returncode == 0, p.stderr
-    levels = _resolved_levels(p.stderr)
+    levels = resolved_levels(p.stderr)
     assert levels[0] == levels[1] and levels[0] > 0, levels
     outdir = workdir / f"dirty-(waifu2x_cunet)-n{levels[0]}-2.0x"
     assert outdir.is_dir()
@@ -126,7 +110,7 @@ def test_auto_folder_mixed_levels_mark_each_file(workdir):
 
     p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto", "-f", "png", "-g", "-1", "-v"])
     assert p.returncode == 0, p.stderr
-    levels = _resolved_levels(p.stderr)
+    levels = resolved_levels(p.stderr)
     assert len(levels) == 2 and levels[0] != levels[1], levels
 
     outdir = workdir / "mixed-(waifu2x_cunet)-nX-2.0x"
@@ -170,7 +154,7 @@ def test_auto_batch_zero_level_after_dirty_reloads_none_weights(workdir):
 
     p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto", "-f", "png", "-g", "-1", "-v"])
     assert p.returncode == 0, p.stderr
-    levels = _resolved_levels(p.stderr)
+    levels = resolved_levels(p.stderr)
     # 顺序守卫：夹具必须保持「非 0 在前、0 在后」，否则本用例会空转通过
     assert len(levels) == 2 and levels[0] > 0 and levels[1] == 0, levels
 
