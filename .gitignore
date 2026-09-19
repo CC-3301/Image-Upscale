@@ -19,6 +19,9 @@ __pycache__/
 # pi 内部目标文件
 .pi/
 
+# implement-pro 批次状态与门禁产物（本机路径，不入库）
+.pi-implement/
+
 # asan 构建目录
 bld-asan/
 
