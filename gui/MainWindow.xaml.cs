@@ -349,9 +349,17 @@ public partial class MainWindow : Window
     // 文件夹/空/无效路径 → 显示「开」并灰置（灰置值即实际生效值，不加提示文字）
     private void OnInputTextChanged(object sender, TextChangedEventArgs e) => UpdateAddSuffixState();
 
+    // 工单 62：「这次输入是不是一个文件」/「输入是否有效」的**单一定义来源** ——
+    // 发参前的 --no-rename 判断、后缀开关的灰置跟随、开始前的合法性校验三处共用同一口径：
+    // 文件夹 / 空 / 无效路径 → 非文件输入
+    private static bool IsFileInput(string input) => File.Exists(input);
+
+    private static bool IsValidInput(string input)
+        => !string.IsNullOrWhiteSpace(input) && (IsFileInput(input) || Directory.Exists(input));
+
     private void UpdateAddSuffixState()
     {
-        var isFile = File.Exists(InputBox.Text);
+        var isFile = IsFileInput(InputBox.Text);
         // 显示值：文件输入 = 记忆值；文件夹/空/无效路径 = 默认值「开」（灰置值即实际生效值）
         _suppressAddSuffixWrite = true;
         AddSuffixBox.SelectedIndex = SettingsStore.AddSuffixToIndex(isFile ? _addSuffix : SettingsStore.DefaultAddSuffix);
@@ -401,7 +409,7 @@ public partial class MainWindow : Window
     private async void OnStart(object sender, RoutedEventArgs e)
     {
         var input = InputBox.Text;
-        if (string.IsNullOrWhiteSpace(input) || !File.Exists(input) && !Directory.Exists(input))
+        if (!IsValidInput(input))
         {
             MessageBox.Show("请先选择有效的输入文件或文件夹", "提示");
             return;
@@ -410,8 +418,8 @@ public partial class MainWindow : Window
         // 工单 27：参数走数组（P/Invoke wchar_t**），无需引号转义；--models-dir 由 GUI 显式传入
         var args = new List<string> { "-i", input, "-m", m.Id, "--models-dir", _modelsDir };
         // 工单 50：文件输入 + 「文件添加扩展名」关 → 产物用原文件名（不加后缀段）。
-        // 文件夹输入忽略该开关；且灰置时的显示值「开」不代表记忆值，故按 File.Exists + _addSuffix 判断
-        if (File.Exists(input) && !_addSuffix)
+        // 文件夹输入忽略该开关；且灰置时的显示值「开」不代表记忆值，故按 IsFileInput + _addSuffix 判断
+        if (IsFileInput(input) && !_addSuffix)
             args.Add("--no-rename");
 
         if (ModeScale.IsChecked == true)
