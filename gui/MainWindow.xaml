@@ -45,7 +45,8 @@
         <!-- 模型（工单 21：A-Z 排序 / 不再显示类型与架构；v0.2.4 移除"现有模型："前缀）
              工单 51：「降采样方式」从「降噪与输出」行挪到此处，与模型下拉同行
              工单 42 实测："Catmull-Rom"在 100px 下被裁；实测控件自身开销 28px + 文字 76.1px（微软雅黑 UI 12px）= 104.1px，
-             故下拉宽度定为 106px（115 嫌宽、100 裁字）；本行实测宽度 520px，780×540 窗口内不换行 -->
+             故下拉宽度定为 106px（115 嫌宽、100 裁字）；本行实测宽度 520px（口径同下方「降噪与输出」注释：
+             780×540 窗口、UIAutomation 读子控件矩形），不换行 -->
         <GroupBox Grid.Row="1" Header="模型" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
                 <ComboBox x:Name="ModelBox" Width="320" SelectionChanged="OnModelChanged"/>
@@ -72,9 +73,20 @@
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
             <!-- v0.2.4：整体一行不换行（维护者定案，用 StackPanel 非 WrapPanel）
                  工单 42：第四组为“降采样方式”（工单 51 已挪到「模型」栏）
-                 工单 51：第四组改为「文件添加扩展名」下拉；实测（780×540，模型不支持降噪 → 提示可见的）
-                 行宽 716px ≤ 可用宽 720px（GroupBox 736 − 左右 padding 16）→ 不裁剪，MinWidth 780 不变；
-                 下拉宽 72px（“开/关”单字 12px + 控件开销 28px = 40px 即可完整显示，取 72px 与同行下拉观感一致） -->
+                 工单 51：第四组改为「文件添加扩展名」下拉。实测口径（可复现）——
+                   窗口 780×540（MinWidth）；模型 digital-art-4x（唯一不支持降噪的模型，“该模型不支持降噪”提示可见 = 最坏情况）；
+                   用 UIAutomation 读本组全部子控件的 BoundingRectangle：
+                   行宽 = 最右子控件右边缘 − 本组内容区左边缘（GroupBox 左边缘 + padding 8）；
+                   可用宽 = GroupBox 宽 − 左右 padding 16（本尺寸下 = 736 − 16 = 720）。
+                 实测：行宽 716px ≤ 可用宽 720px（余 4px）→ 不裁剪，MinWidth 780 不变。
+                 与历史数字的关系（不让仓库并存两套口径）：
+                   ① 控件替换本身：改前同一行（末位为降采样方式组）同口径实测 726px，换成更窄的本组后 716px（−10px）；
+                   ② 旧注释的 758px/764px 与工单 42 的 734px 口径未写明，它们 ≈ 内容区内的行占位（首子控件左边缘→
+                      末子控件右边缘，本尺寸下 720px）再加 38/44px 内容区外余量；758 与 764 出现在同一段旧注释里、
+                      描述同一行却相差 6px，自相矛盾；734 与 758 相差 24px 恰等于「降采样：」→「降采样方式：」的
+                      标签增量，说明这两个数同属那套旧口径 → 与上面的“行宽”不是同一口径，不要混用；本票起以本口径为准。
+                 下拉宽 72px（“开/关”单字 12px + 控件开销 28px = 40px 即可完整显示，取 72px 与同行下拉观感一致）；
+                 下拉项由 SettingsStore.AddSuffixLabels 填充（单一定义来源，本 XAML 不写死项） -->
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="降噪：" VerticalAlignment="Center"/>
@@ -99,11 +111,9 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="文件添加扩展名：" VerticalAlignment="Center" Margin="16,0,0,0"/>
                     <!-- 工单 51：产物名后缀段开关（工单 50 的 no-rename 开关）；只对文件输入生效，
-                         文件夹/空/无效路径时由代码切到「开」并灰置（工单 50 定案 1） -->
-                    <ComboBox x:Name="AddSuffixBox" Width="72" SelectionChanged="OnAddSuffixChanged">
-                        <ComboBoxItem Content="开"/>
-                        <ComboBoxItem Content="关"/>
-                    </ComboBox>
+                         文件夹/空/无效路径时由代码切到「开」并灰置（工单 50 定案 1）；
+                         项不写在这里 —— 由 SettingsStore.AddSuffixLabels 填充（工单 41/42 的单一定义来源惯例） -->
+                    <ComboBox x:Name="AddSuffixBox" Width="72" SelectionChanged="OnAddSuffixChanged"/>
                 </StackPanel>
             </StackPanel>
         </GroupBox>

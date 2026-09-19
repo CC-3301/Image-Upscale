@@ -69,9 +69,15 @@ public partial class MainWindow : Window
         foreach (var label in SettingsStore.DownFilterLabels)
             DownFilterBox.Items.Add(label);
         DownFilterBox.SelectedIndex = 0;
-        // 工单 51：后缀开关初始态（输入框还是空 → 非文件输入，显示「开」并灰置）
-        UpdateAddSuffixState();
-        RestoreWindowBounds(SettingsStore.Load());
+        // 工单 51：后缀开关（项由 SettingsStore.AddSuffixLabels 单一来源填充；与模型无关，
+        // 故记忆值在构造函数这里读就定下来 —— OnLoaded/RestoreSettings 在 models 缺失时会早退，
+        // 若只在那里赋值，“关闭时写回”会拿初值把用户存的「关」抹成「开」）
+        foreach (var label in SettingsStore.AddSuffixLabels)
+            AddSuffixBox.Items.Add(label);
+        var s = SettingsStore.Load();
+        _addSuffix = s.AddSuffix;
+        UpdateAddSuffixState(); // 输入框还是空 → 非文件输入，显示「开」并灰置
+        RestoreWindowBounds(s);
         Loaded += OnLoaded;
     }
 
@@ -138,9 +144,7 @@ public partial class MainWindow : Window
         _quality = q;
         QualityInput.Text = q.ToString();
 
-        // 工单 51：后缀开关（记忆值 + 按当前输入类型刷新生效态）
-        _addSuffix = s.AddSuffix;
-        UpdateAddSuffixState();
+        // 工单 51：后缀开关的记忆值已在构造函数读过（与模型可用性无关），此处不重复赋值
     }
 
     // 工单 18：日志区高度上限 = 窗口可用高度的 60%（下限由 XAML MinHeight 保证；
@@ -269,8 +273,9 @@ public partial class MainWindow : Window
     private void UpdateAddSuffixState()
     {
         var isFile = File.Exists(InputBox.Text);
+        // 显示值：文件输入 = 记忆值；文件夹/空/无效路径 = 「开」（灰置值即实际生效值）
         _suppressAddSuffixWrite = true;
-        AddSuffixBox.SelectedIndex = isFile && !_addSuffix ? 1 : 0;
+        AddSuffixBox.SelectedIndex = SettingsStore.AddSuffixToIndex(isFile ? _addSuffix : true);
         _suppressAddSuffixWrite = false;
         AddSuffixBox.IsEnabled = isFile;
     }
@@ -279,8 +284,7 @@ public partial class MainWindow : Window
     {
         if (_suppressAddSuffixWrite)
             return;
-        // 序号 0 = 开，1 = 关（XAML 里的项序即契约）
-        _addSuffix = AddSuffixBox.SelectedIndex <= 0;
+        _addSuffix = SettingsStore.AddSuffixFromIndex(AddSuffixBox.SelectedIndex);
     }
 
     private void OnBrowse(object sender, RoutedEventArgs e)
@@ -528,6 +532,15 @@ public class SettingsStore
     // 下拉当前选中项 → 引擎 token（未选中/越界回退第 0 项 Lanczos，与引擎侧以 0 为默认一致）
     internal static string DownFilterTokenAt(int selectedIndex)
         => DownFilterTokens[selectedIndex >= 0 && selectedIndex < DownFilterTokens.Length ? selectedIndex : 0];
+
+    // 工单 51：后缀开关的项 ↔ 语义（**单一定义来源**，照 DownFilterTokens/Labels 模式；
+    // 界面项由本表填充，序号 ↔ 布尔只经下面两个 helper，调项序不会静默反相）
+    internal static readonly string[] AddSuffixLabels = { "开", "关" };
+
+    // 下拉当前选中项 → 是否带后缀段（未选中/越界回退「开」= 现状，与 Load 的非法值回退一致）
+    internal static bool AddSuffixFromIndex(int selectedIndex) => selectedIndex != 1;
+
+    internal static int AddSuffixToIndex(bool addSuffix) => addSuffix ? 0 : 1;
 
     // 工单 25：窗口几何（MinValue/0 = 无记录）
     public int WindowLeft = int.MinValue;
