@@ -24,7 +24,9 @@
 
 - `engine/src/engine_core.cpp`：删除 `is_same_path_ci`（约 `:670`）与 `run_files` 里的
   `if (single_file && is_same_path_ci(outpath, inpath)) { fail(...); continue; }` 分支（约 `:886`）。
-  `setlocale` / `CompareStringOrdinal` 相关引用随之清理（勿留死代码）。
+  `CompareStringOrdinal` 只存在于被删的 `path_equal_ci` 内，随之删除。
+  **`setlocale(LC_ALL, "")` 保留**（编排者 2026-09-20 订正：原文写的「`setlocale` 相关引用随之清理」
+  是笔误）——它早于工单 50 就存在，影响 `wcstod` 解析 `-s` 的小数点等进程 locale 行为，不是本票死代码。
 - **原地覆盖的安全性依据（实施者需在代码注释里写明并核对）**：本文件在解码阶段一次性读入内存并
   `fclose`（`engine_core.cpp:730-750`），写盘发生在推理之后（`:1076-1089`），中间不再读输入路径
   → 原地写不会读到半写状态。若核对发现存在第二次读取输入路径的路径（含 alpha / 直通缩放分支），
