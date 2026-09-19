@@ -56,15 +56,18 @@
             </WrapPanel>
         </GroupBox>
 
-        <!-- 尺寸模式（工单 19：WrapPanel 窄窗口自动换行） -->
+        <!-- 尺寸模式（工单 19：WrapPanel 窄窗口自动换行）
+             工单 53：两个单选文案写全「指定宽度 / 指定高度」（各 +1 字 = +12px）。
+             实测口径同下方「降噪与输出」注释（780×540 窗口、UIAutomation 读子控件矩形）：
+             改前该行 457px；改后 481px ≤ 可用宽 720px（余 239px）→ 单行不换行，MinWidth 780 不变。 -->
         <GroupBox Grid.Row="2" Header="尺寸模式" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
                 <RadioButton x:Name="ModeScale" GroupName="sizemode" IsChecked="True"
                              Content="倍率" VerticalAlignment="Center"/>
                 <ComboBox x:Name="ScaleBox" Width="80" Margin="6,0,20,0"/>
-                <RadioButton x:Name="ModeWidth" GroupName="sizemode" Content="指定宽" VerticalAlignment="Center"/>
+                <RadioButton x:Name="ModeWidth" GroupName="sizemode" Content="指定宽度" VerticalAlignment="Center"/>
                 <TextBox x:Name="WidthBox" Width="80" Margin="6,0,20,0"/>
-                <RadioButton x:Name="ModeHeight" GroupName="sizemode" Content="指定高" VerticalAlignment="Center"/>
+                <RadioButton x:Name="ModeHeight" GroupName="sizemode" Content="指定高度" VerticalAlignment="Center"/>
                 <TextBox x:Name="HeightBox" Width="80" Margin="6,0,0,0"/>
             </WrapPanel>
         </GroupBox>
