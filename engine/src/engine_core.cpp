@@ -650,15 +650,15 @@ struct RunOptions
 // 单文件输出的命名（工单 02 命名规则）
 // SR 路径：A-(模型名)-[nN-]<倍率|尺寸>；直通缩放：A-(Resize)-<尺寸>
 // 工单 50：no_rename 时整段后缀都不加，产物 = A.<输出格式扩展名>（只作用于文件输入）
-// denoise_seg 是**本文件**解析出的降噪段（AUTO 时逐文件不同），不取自 naming.denoise_seg
+// file_denoise_seg 是**本文件**解析出的降噪段（AUTO 时逐文件不同），不取自 naming.denoise_seg（批量档位段）
 static path_t single_file_outpath(const std::filesystem::path& in, const NamingSegments& naming,
-                                  const std::wstring& denoise_seg, bool direct_resize, bool no_rename)
+                                  const std::wstring& file_denoise_seg, bool direct_resize, bool no_rename)
 {
     if (no_rename)
         return in.parent_path() / (in.stem().wstring() + L"." + naming.ext);
     if (direct_resize)
         return in.parent_path() / (in.stem().wstring() + L"-(Resize)-" + naming.scale_seg + L"." + naming.ext);
-    return in.parent_path() / (in.stem().wstring() + L"-(" + naming.display + L")" + denoise_seg + L"-" +
+    return in.parent_path() / (in.stem().wstring() + L"-(" + naming.display + L")" + file_denoise_seg + L"-" +
                                naming.scale_seg + L"." + naming.ext);
 }
 
