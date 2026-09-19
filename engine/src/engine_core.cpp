@@ -623,6 +623,7 @@ static bool resolve_model_files(const std::wstring& models_dir, const ModelInfo&
 
 // 产物名的命名段（工单 02 命名规则 / 工单 39 逐文件档位 / 工单 50 无后缀）
 // 工单 61：run_files 与 single_file_outpath 共用同一份，不再逐个位置传参
+// 四个字段都是 std::wstring，默认构造即空串（= 未设置），不再写类内初值
 struct NamingSegments
 {
     std::wstring ext;         // 输出格式扩展名（不含点）
@@ -631,20 +632,22 @@ struct NamingSegments
     std::wstring scale_seg;   // 倍率/尺寸段（2.0x / 128x）
 };
 
-// 运行期标量参数（工单 61）：字段顺序即聚合初始化的实参顺序
+// 运行期标量参数（工单 61）：**字段顺序即聚合初始化的实参顺序，不得换序**
+// 类内初值取「未设置」语义：quality=-1 / run_scale=0 / target_value=0 均在各自合法域之外，
+// 漏填不会被当成有效值；tilesize=0 与 down_filter=0 分别等于 CLI 的「自动」与 Lanczos 默认
 struct RunOptions
 {
-    path_t format;        // 输出编码容器（jpg/png/webp）
-    int quality;          // jpg/webp 质量
-    int run_scale;        // 倍率模式的原生倍数
-    bool target_mode;     // 目标尺寸模式
-    int target_value;     // 目标宽或高
-    bool target_is_width; // target_value 是宽
-    int down_filter;      // 降采样滤镜
-    int tilesize;
-    bool denoise_auto;
-    bool verbose;
-    bool no_rename;
+    path_t format;                // 输出编码容器（jpg/png/webp）；空串 = 未设置
+    int quality = -1;             // jpg/webp 质量（合法域 0-100）
+    int run_scale = 0;            // 倍率模式的原生倍数（合法域 ≥1）
+    bool target_mode = false;     // 目标尺寸模式
+    int target_value = 0;         // 目标宽或高（合法域 >0）
+    bool target_is_width = true;  // target_value 是宽（与 CLI 默认一致）
+    int down_filter = 0;          // 降采样滤镜（0 = Lanczos）
+    int tilesize = 0;             // 0 = 按显存自动
+    bool denoise_auto = false;
+    bool verbose = false;
+    bool no_rename = false;
 };
 
 // 单文件输出的命名（工单 02 命名规则）
