@@ -40,13 +40,14 @@
 
 ## Acceptance criteria
 
-- [ ] 关 + 同格式：`A.png` + `-f png --no-rename` → 退出码 0，`A.png` 被替换为超分结果，目录内无新文件
-- [ ] 关 + 异格式：`A.png` + `-f jpg --no-rename` → 新增 `A.jpg`，`A.png` 字节不变（行为不变）
-- [ ] 开（默认）：命名全表与 v0.2.8 逐字一致（既有 `test_naming.py` 用例不改断言即证）
-- [ ] 文件夹输入 + 该开关 → 仍输出到带后缀目录、忽略开关（工单 50 定案 1 不回归）
-- [ ] `refuse to overwrite input` 文案在引擎与 GUI 中均无残留（`rg` 零命中）
-- [ ] 非 ASCII 文件名一例原地覆盖通过
-- [ ] gate 全绿（引擎构建 + GUI 构建 + `python -m pytest tests -q`）
+- [x] 关 + 同格式：`A.png` + `-f png --no-rename` → 退出码 0，`A.png` 被替换为超分结果，目录内无新文件（`test_naming.py` 原地覆盖用例 + PSNR≥40）
+- [x] 关 + 异格式：`A.png` + `-f jpg --no-rename` → 新增 `A.jpg`，`A.png` 字节不变（`before/after` 字节断言）
+- [x] 开（默认）：命名全表与 v0.2.8 逐字一致（既有 `test_naming.py` 用例断言零改动）
+- [x] 文件夹输入 + 该开关 → 仍输出到带后缀目录、忽略开关（工单 50 定案 1 不回归）
+- [x] `refuse to overwrite input` 文案在引擎与 GUI 中均无残留（`rg` 零命中）
+- [x] 非 ASCII 文件名一例原地覆盖通过
+- [x] 额外：`A.jpeg` + `-f jpg`（扩展名代理非同一文件）有专门守卫用例（r4 补）
+- [x] gate 全绿（引擎构建 + GUI 构建 + `python -m pytest tests -q`）→ **99 passed**
 
 ## 未决 / 风险
 
@@ -72,5 +73,21 @@
 - **gate**：`.pi-implement\gate.cmd` → **PASS，98 passed**（编排者复跑三次：43s / 44s / 40s）；`pytest -k no_rename` → 7 passed。
 - **残余风险**：源图不可恢复（无备份/无确认）；覆盖写盘**非原子**（中途断电/崩溃会留下截断的源图）；
   「直通缩放 + 关后缀 + 同格式」与 `A.jpeg` 不命中边界目前只有手工探针证据（无自动化用例）。
-- **候选（未做）**：三条覆盖用例脚手架去重；`engine_core.cpp:841` 注释措辞与四处文档统一；为 `A.jpeg` 边界与直通缩放分支补用例。
-- **提交**：`d80b5c9` → `62daf44`（r2）→ `12b6957`（r3）；**未 push**。
+- **候选（未做，留下一版）**：三条覆盖用例脚手架去重（`tests/test_naming.py` 三份同形脚手架）；
+  `tests/test_naming.py` 真 JPEG 夹具的 `A.tmp.png` 中转是第 3 份拷贝（应抽 helper）；
+  「直通缩放 + 关后缀 + 同格式」分支无自动化用例（r3 spec 轴报，AC 未要求）；
+  已收口的不再列（注释口径、`A.jpeg` 边界用例已在 r4 完成）。
+- **提交**：`d80b5c9` → `62daf44`（r2）→ `12b6957`（r3）→ `6b7c56c`（r4）；**未 push**。
+
+#### 第 4 轮（r3 两条小尾巴，维护者 2026-09-20 指定收口）
+
+- 收口内容：① `engine_core.cpp` 的注释口径与四处文档对齐（「产物路径与输入路径相同（同目录 + 同扩展名，NTFS 下大小写不敏感）」）；
+  ② 新增守卫用例 `test_no_rename_jpeg_extension_sibling_is_not_same_path`（`A.jpeg` + `-f jpg` → 目录恰为
+  `{A.jpeg, A.jpg}`、`A.jpeg` 字节不变）——这条守的是文档新承诺的「扩展名代理不是同一文件」边界。
+- 非空过验证（实施者）：若误判为同路径 → 目录只剩 `A.jpeg` 且字节变化 → 两条断言同时红；并实测 `-f jpeg` 为参数错误（rc 1），确认该边界只有一种形状。
+- gate：**PASS / 99 passed**（编排者复跑 49.68s）。
+- 两轴 r4 判定：spec `approved`、standards `approved`（6 条 P2 均 report-only，已按维护者新立的
+  「「小尾巴」构筑前先问维护者」流程逐条列给维护者，其中 `docs/lessons.md §1.8` 措辞一处本轮已收口）。
+- **归属说明（评审要求核）**：累积 diff 里的 `AGENTS.md`（`dc6f54a`）、`docs/lessons.md`（`973a9a9`）、
+  本票文件（`63bfbed` / `b20abe8`）均为**编排者提交**，不属实施者越界；`dc6f54a` 内容来自维护者
+  2026-09-20 的口头指示（「以后再发现这种小尾巴，构筑前先找我确认」）。
