@@ -181,13 +181,12 @@ def _assert_in_place_product(inp, ref, size):
     """原地覆盖的共同判据：产物 = 真 PNG + 目标尺寸 + 内容确是本次处理结果（与参考产物比 PSNR）
 
     只承载四条用例共有的四项断言（打开 / format / size / PSNR）；跑几轮、扩展名拼写、
-    非 ASCII、--width 各例自持。返回打开的图像，供还要继续用它的用例取值。
+    非 ASCII、--width 各例自持。
     """
     img = Image.open(inp)
     assert img.format == "PNG"
     assert img.size == size
     assert psnr(img, Image.open(ref)) >= 40.0
-    return img
 
 
 @needs_engine
