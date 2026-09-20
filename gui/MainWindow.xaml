@@ -97,9 +97,12 @@
              工单 67 实测：本行 532px（降噪 / 输出格式 / 输出质量 三组 + 提示）→ 余 188px，不裁剪；
                同行其它栏同口径：模型 524px、尺寸模式 481px（与工单 53 的 481 逐像素一致 —— 证明本次
                把间隔从“上一控件的右 margin”挪到“下一组标签的左 margin”没改渲染）、文件处理 362px。
+             工单 71 实测：输出格式下拉 90 → **118px**（容下「与输入格式相同」7 个中文字）→ 本行 532 → **560px**，
+               余 160px，仍不裁剪；同行其它栏未变。
              历史数字：工单 51 时代的 716px 是「降噪 / 输出格式 / 输出质量 / 文件添加扩展名」四组那一版
                （同一口径）；工单 67 把末组挪到「文件处理」栏并统一间距后降到 532px。
-             下拉宽 90px（“开/关”单字 12px 无需那么宽，但同栏下拉统一取 90px 观感一致） -->
+             控件宽：降噪下拉 90px、输出格式下拉 118px（由字最长的一项「与输入格式相同」决定）、
+               输出质量输入框 48px —— 不强制同宽（同宽会让「输出格式」裁字或让降噪下拉过宽） -->
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
@@ -114,11 +117,9 @@
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="输出格式：" VerticalAlignment="Center" Margin="20,0,0,0"/>
-                    <ComboBox x:Name="FormatBox" Width="90" SelectedIndex="0">
-                        <ComboBoxItem Content="JPG"/>
-                        <ComboBoxItem Content="PNG"/>
-                        <ComboBoxItem Content="WebP"/>
-                    </ComboBox>
+                    <!-- 工单 71：输出格式多了「与输入格式相同」一项，项由 SettingsStore.OutputFormatLabels
+                         单一来源填充（工单 41/42 惯例），本 XAML 不写死项 -->
+                    <ComboBox x:Name="FormatBox" Width="118"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="输出质量：" VerticalAlignment="Center" Margin="20,0,0,0"/>

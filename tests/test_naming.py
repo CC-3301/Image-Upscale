@@ -292,6 +292,32 @@ def test_no_rename_folder_rejects_colliding_outputs(workdir):
 
 
 @needs_engine
+def test_folder_suffix_naming_rejects_colliding_outputs(workdir):
+    """工单 70：**开着**后缀段 + 目录里同 stem 不同扩展名 → 两个产物算到同一路径，跑之前拒绝
+
+    实测修复前的静默后果（bld 跑 1.jpg + 1.png 配 -f jpg，遍历顺序 1.jpg 在前）：
+    两行都打 done、退出码 0，而产物目录里只有一个 1-(模型名)-n0-2.0x.jpg（后写的盖掉先写的）——
+    第一张图白跑了。配 --delete-input 更会两张源图全删、只剩一张产物。
+    """
+    folder = workdir / "collide-suffix"
+    folder.mkdir()
+    make_png(folder / "1.png", size=(32, 32))
+    make_jpg(folder / "1.jpg", size=(32, 32))
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "are the same file" in p.stderr, p.stderr
+    # 拒绝发生在建输出目录之前：源图一个字节没动、输出目录也不该留下
+    assert {q.name: q.read_bytes() for q in folder.iterdir()} == before
+    assert not (workdir / f"collide-suffix-{MODEL_TAG}-n0-2.0x").exists()
+
+    # 换 -f same 就不撞了（产物一个是 .jpg、一个是 .png）→ 能跑完，见 test_format_same.py
+    p2 = run_engine(["-i", folder, "-f", "same", "-g", "-1"])
+    assert p2.returncode == 0, p2.stderr
+
+
+@needs_engine
 def test_no_rename_folder_auto_picks_each_files_own_variant(workdir):
     """目录 + 关后缀段 + AUTO 档位不一致：产物名不带任何段，但每个文件仍按**自己**解析出的档位
     选权重（工单 39 的逐文件档位在关后缀段路径下不得失效）。

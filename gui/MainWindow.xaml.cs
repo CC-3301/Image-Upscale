@@ -105,6 +105,10 @@ public partial class MainWindow : Window
         // 工单 42：降采样下拉（与模型无关的固定档位表）
         foreach (var label in SettingsStore.DownFilterLabels)
             DownFilterBox.Items.Add(label);
+        // 工单 71：输出格式下拉（JPG / PNG / WebP / 与输入格式相同）—— 项与 token 同一份表，
+        // 不再在 XAML 里写死 ComboBoxItem（否则「界面文案 → 引擎 token」得再拍一次映射）
+        foreach (var label in SettingsStore.OutputFormatLabels)
+            FormatBox.Items.Add(label);
         // 工单 51/68：产物后缀段开关（项由 SettingsStore.SwitchLabels 单一来源填充；与模型无关，
         // 故记忆值在构造函数这里读就定下来 —— OnLoaded/RestoreSettings 在 models 缺失时会早退，
         // 若只在那里赋值，“关闭时写回”会拿初值把用户存的「关」抹成「开」）
@@ -124,6 +128,10 @@ public partial class MainWindow : Window
         // 工单 69：删除输入文件开关同理（与模型无关 + OnClosing 无条件写回）
         _deleteInput = s.DeleteInput;
         DeleteInputBox.SelectedIndex = SettingsStore.SwitchIndexFrom(_deleteInput);
+        // 工单 71：输出格式的记忆值在构造函数读定（与 DownFilter / AddSuffix / Denoise 同款，工单 59 口径）——
+        // 本控件在 OnClosing 是无条件写回，而 RestoreSettings 在 models 缺失/清单为空时早退，
+        // 只在那里赋值会让「关窗写回」拿 -1（未选中）或初值把用户存的 png/webp/same 抹成 jpg
+        FormatBox.SelectedIndex = SettingsStore.OutputFormatIndexFrom(s.OutputExt);
         // 工单 49：降噪记忆初值 —— 与后缀开关同理（RestoreSettings 在 models 缺失时早退，
         // 若只在那里读，“退出时写回”会拿初值把用户存的档位抹成默认）
         _denoiseGlobal = s.Denoise;
@@ -183,11 +191,8 @@ public partial class MainWindow : Window
         if (s.ScaleWidth > 0) WidthBox.Text = s.ScaleWidth.ToString();
         if (s.ScaleHeight > 0) HeightBox.Text = s.ScaleHeight.ToString();
 
-        // 输出格式
-        var fmtIdx = s.OutputExt switch { "jpg" => 0, "png" => 1, "webp" => 2, _ => 0 };
-        FormatBox.SelectedIndex = fmtIdx;
-
-        // 工单 59：降采样滤镜已移到构造函数恢复（与「models 是否加载成功」解耦），此处不再重复
+        // 工单 59：降采样滤镜已移到构造函数恢复（与「models 是否加载成功」解耦），此处不再重复；
+        // 工单 71：输出格式同理（见构造函数）
 
         // 质量：真源为输入框（v0.2.4 去滑条），非法存储值回退默认 90
         var q = (s.OutputQuality >= 0 && s.OutputQuality <= 100) ? s.OutputQuality : 90;
@@ -450,10 +455,13 @@ public partial class MainWindow : Window
         args.Add("--down-filter");
         args.Add(SettingsStore.DownFilterTokenAt(DownFilterBox.SelectedIndex));
 
-        var fmt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString();
+        // 工单 71：输出格式取 token（下拉第 4 项「与输入格式相同」= same）
+        var fmtToken = SettingsStore.OutputFormatTokenAt(FormatBox.SelectedIndex);
         args.Add("-f");
-        args.Add(fmt.ToLower());
-        if (fmt != "PNG")
+        args.Add(fmtToken);
+        // 质量参数只对 jpg/webp 生效（PNG 无损忽略它）；「与输入格式相同」时格式逐文件才定，
+        // 故照样传 -q —— 落到 PNG 的那几个文件引擎会忽略它
+        if (fmtToken != "png")
         {
             args.Add("-q");
             args.Add(_quality.ToString());
@@ -574,7 +582,7 @@ public partial class MainWindow : Window
             s.Scale = double.TryParse(ScaleBox.SelectedItem?.ToString()?.TrimEnd('x'), out var sc) ? (int)Math.Round(sc) : 0;
             s.ScaleWidth = int.TryParse(WidthBox.Text, out var w) && w > 0 ? w : 0;
             s.ScaleHeight = int.TryParse(HeightBox.Text, out var h) && h > 0 ? h : 0;
-            s.OutputExt = ((ComboBoxItem)FormatBox.SelectedItem).Content.ToString()?.ToLower() ?? "jpg";
+            s.OutputExt = SettingsStore.OutputFormatTokenAt(FormatBox.SelectedIndex);
             s.OutputQuality = _quality;
         }
 
@@ -617,7 +625,8 @@ public class SettingsStore
     public int Scale;                  // 倍率模式的倍数值（如 2）；0 = 无记录
     public int ScaleWidth;             // 指定宽值；0 = 无记录
     public int ScaleHeight;
-    public string OutputExt = "jpg";
+    // 工单 71：输出格式 token（默认 JPG；"same" = 逐文件跟随输入格式）
+    public string OutputExt = OutputFormatTokens[DefaultOutputFormatIndex];
     public int OutputQuality = -1;     // -1 = 无记录
     // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）；
     // 默认项见 DefaultDownFilterIndex（工单 59）
@@ -630,6 +639,26 @@ public class SettingsStore
     // DenoiseByModel 是档位不齐的模型各自的独立槽（LastDenoise_<modelId>；无键 = 无记录 → 回退默认档）
     public int Denoise = -1;
     public Dictionary<string, int> DenoiseByModel = new();
+
+    // 工单 71：输出格式的 token ↔ 界面标签（**单一定义来源**，照 DownFilterTokens/Labels 模式；
+    // 界面项由本表填充，序号 ↔ token 只经下面两个 helper）。"same" = 逐文件跟随输入格式，
+    // 产物扩展名保留输入的拼写（.jpeg 就写 .jpeg；编码器归一到 jpg）
+    internal static readonly string[] OutputFormatTokens = { "jpg", "png", "webp", "same" };
+    internal static readonly string[] OutputFormatLabels = { "JPG", "PNG", "WebP", "与输入格式相同" };
+
+    // 默认输出格式 = 表第 0 项（JPG）—— 字段初值、ini 未命中回退、越界回退三处都指向它
+    internal const int DefaultOutputFormatIndex = 0;
+
+    // 下拉当前选中项 → token（未选中/越界回退默认项）
+    internal static string OutputFormatTokenAt(int selectedIndex)
+        => OutputFormatTokens[selectedIndex >= 0 && selectedIndex < OutputFormatTokens.Length ? selectedIndex : DefaultOutputFormatIndex];
+
+    // ini 的 token → 下拉序号（不在表内 → 默认项）
+    internal static int OutputFormatIndexFrom(string token)
+    {
+        var i = Array.IndexOf(OutputFormatTokens, token);
+        return i >= 0 ? i : DefaultOutputFormatIndex;
+    }
 
     // 工单 42：降采样滤镜的 token ↔ 界面标签（**单一定义来源**；界面项与 setting.ini 校验共用）。
     // 注意：界面 Bicubic 的核是 Mitchell-Netravali，界面 Catmull-Rom 的核是 Catmull-Rom
@@ -732,7 +761,7 @@ public class SettingsStore
             s.Scale = TryPositiveInt(map, "LastScale");
             s.ScaleWidth = TryPositiveInt(map, "LastScaleWidth");
             s.ScaleHeight = TryPositiveInt(map, "LastScaleHeight");
-            s.OutputExt = map.TryGetValue("LastOutputExt", out v) && v is "jpg" or "png" or "webp" ? v : "jpg";
+            s.OutputExt = map.TryGetValue("LastOutputExt", out v) && Array.IndexOf(OutputFormatTokens, v) >= 0 ? v : OutputFormatTokens[DefaultOutputFormatIndex];
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
             s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : DownFilterTokens[DefaultDownFilterIndex];
             // 工单 51：缺键/非法值静默回退默认「开」；v != "0" 是兼容 v0.2.8 以来的写法

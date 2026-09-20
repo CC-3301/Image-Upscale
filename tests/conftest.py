@@ -87,7 +87,9 @@ def _checker_img(size=(64, 64), mode="RGB"):
             elif mode == "L":
                 px[x, y] = v[0]
             elif mode == "RGBA":
-                px[x, y] = v + (255 if x < w // 2 else 128)
+                # 左半透明 255、右半 128（原先写成 v + (int) → tuple+int 直接 TypeError；
+                # 工单 71 补 alpha 用例时才发现这个分支从没被跑过，详见票面）
+                px[x, y] = v + (255 if x < w // 2 else 128,)
     return img
 
 

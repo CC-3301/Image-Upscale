@@ -86,7 +86,7 @@ static void print_usage()
     log_out("  --denoise level      none/low/mid/high (default: none; model must support it)\n");
     log_out("  --down-filter f      resize filter when shrinking: lanczos/catmullrom/bicubic/box\n");
     log_out("                       (default: lanczos; only for shrinking — upscaling uses model passes)\n");
-    log_out("  -f format            output image format jpg/png/webp (default: jpg)\n");
+    log_out("  -f format            output image format jpg/png/webp/same (default: jpg; same = follow each input)\n");
     log_out("  -q quality           output quality 0-100 for jpg/webp (default: 90)\n");
     log_out("  -t tile-size         tile size (>=32/0=auto, default: 0)\n");
     log_out("  -g gpu-id            gpu device (-1=cpu, default: auto)\n");
@@ -626,10 +626,10 @@ static bool resolve_model_files(const std::wstring& models_dir, const ModelInfo&
 // 产物名的命名段（工单 02 命名规则 / 工单 39 逐文件档位 / 工单 50 无后缀）
 // 工单 61：run_files 与 single_file_outpath 共用同一份，不再逐个位置传参
 // 工单 65：构造一律具名赋值，不依赖字段顺序
-// 四个字段都是 std::wstring，默认构造即空串（= 未设置），不再写类内初值
+// 工单 71：`ext` 字段已删 —— 输出扩展名改为**逐文件**参数（`--format same` 时跟随每个输入自己的扩展名），
+// 不再是整批一个值，故不进命名段
 struct NamingSegments
 {
-    std::wstring ext;         // 输出格式扩展名（不含点）
     std::wstring display;     // 模型显示名（产物名的 -(<display>) 段）
     std::wstring denoise_seg; // 降噪段（-nN；直通缩放不写）
     std::wstring scale_seg;   // 倍率/尺寸段（2.0x / 128x）
@@ -652,6 +652,7 @@ struct RunOptions
     bool verbose = false;
     bool no_rename = false;
     bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件（产物与输入同路径时跳过）
+    bool format_same = false;  // 工单 71：输出格式跟随每个输入自己的格式（扩展名保留输入拼写）
 };
 
 // 工单 69/68：路径比较的公共口径（lessons §3.13）—— 先 weakly_canonical，把「输入写 A.PNG、
@@ -688,15 +689,63 @@ static bool path_equal_ci(const path_t& a, const path_t& b)
 // SR 路径：A-(模型名)-[nN-]<倍率|尺寸>；直通缩放：A-(Resize)-<尺寸>
 // 工单 50：no_rename 时整段后缀都不加，产物 = A.<输出格式扩展名>（单文件与目录输入同款，工单 68）
 // file_denoise_seg 是**本文件**解析出的降噪段（AUTO 时逐文件不同），不取自 naming.denoise_seg（批量档位段）
+// file_ext 是**本文件**的产物扩展名（工单 71：`--format same` 时跟随输入，故不进 naming）
 static path_t single_file_outpath(const std::filesystem::path& in, const NamingSegments& naming,
-                                  const std::wstring& file_denoise_seg, bool direct_resize, bool no_rename)
+                                  const std::wstring& file_denoise_seg, const path_t& file_ext,
+                                  bool direct_resize, bool no_rename)
 {
     if (no_rename)
-        return in.parent_path() / (in.stem().wstring() + L"." + naming.ext);
+        return in.parent_path() / (in.stem().wstring() + L"." + file_ext);
     if (direct_resize)
-        return in.parent_path() / (in.stem().wstring() + L"-(Resize)-" + naming.scale_seg + L"." + naming.ext);
+        return in.parent_path() / (in.stem().wstring() + L"-(Resize)-" + naming.scale_seg + L"." + file_ext);
     return in.parent_path() / (in.stem().wstring() + L"-(" + naming.display + L")" + file_denoise_seg + L"-" +
-                               naming.scale_seg + L"." + naming.ext);
+                               naming.scale_seg + L"." + file_ext);
+}
+
+// 工单 71：输入扩展名 → 编码器 token（jpeg/jpg → jpg；大小写不敏感）。
+// 返回空串 = 不是本工具支持的图片扩展名（调用方已先经 ext_is_image 校验）
+static path_t encoder_of_input_extension(const path_t& ext)
+{
+    path_t e = ext;
+    std::transform(e.begin(), e.end(), e.begin(), ::towlower);
+    if (e == PATHSTR("jpg") || e == PATHSTR("jpeg"))
+        return PATHSTR("jpg");
+    if (e == PATHSTR("png"))
+        return PATHSTR("png");
+    if (e == PATHSTR("webp"))
+        return PATHSTR("webp");
+    return path_t();
+}
+
+// 工单 71：本文件的输出格式 —— 产物扩展名与编码器（`-f same` 时逐文件跟随输入：扩展名保留输入拼写，
+// 编码器把 jpeg 归一到 jpg）。run_files / AUTO 探测 / 跑前守卫三处共用这一处 ——
+// 公式分叉的后果是静默写出与后缀不符的字节或产物名算错
+struct OutputFormat
+{
+    path_t ext; // 产物扩展名（不含点）
+    path_t enc; // 编码器（jpg/png/webp）
+};
+
+static OutputFormat output_format_of(const path_t& inpath, bool format_same, const path_t& format)
+{
+    OutputFormat f;
+    if (!format_same)
+    {
+        f.ext = format;
+        f.enc = format;
+        return f;
+    }
+    f.ext = get_file_extension(std::filesystem::path(inpath).filename().wstring());
+    f.enc = encoder_of_input_extension(f.ext);
+    return f;
+}
+
+// 目录模式的产物路径（工单 71）：output_files[i] 已含输出目录与相对路径（不含扩展名与降噪段）；
+// AUTO 档位不一致时逐文件补 -nN（工单 39）。跑前守卫与 run_files 共用这一处 ——
+// 公式手抄两份时“只改一处”就是静默错名
+static path_t dir_product_path(const path_t& out_base, const std::wstring& file_denoise_seg, const path_t& file_ext)
+{
+    return out_base + file_denoise_seg + L"." + file_ext;
 }
 
 // 解码 → 推理/直通缩放 → 编码 循环（顺序流水，进度行输出到 stdout）
@@ -732,6 +781,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
     int loaded_denoise = -1;
     path_t cur_param, cur_bin;
     int cur_prepad = 0;
+
+    // 工单 70：本轮已写出的产物路径（规范化 + 大小写不敏感）→ 输入序号，防两个输入写同一路径
+    std::map<std::wstring, size_t, OrdinalLess> written;
 
     for (int i = 0; i < total; i++)
     {
@@ -790,13 +842,17 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             continue;
         }
 
+        // 工单 71：本文件的产物扩展名与编码器 —— `-f same` 时逐文件跟随输入
+        // （扩展名保留输入拼写：`.jpeg` 产物就叫 `.jpeg`；编码器把 jpeg 归一到 jpg —— 同一套编码）
+        const OutputFormat file_fmt = output_format_of(inpath, opt.format_same, opt.format);
+
         // alpha 处理（工单 04）：PNG/WebP 输出保留并同步放大；JPG 输出与白底合成
         bool has_alpha = false;
         std::vector<unsigned char> alpha_src;
         std::vector<unsigned char> alpha_merged; // 工单 15：生存期必须覆盖合并→编码→写盘（旧代码块作用域导致 use-after-free）
         std::vector<unsigned char> alpha_chain_in;   // 工单 43：alpha 过模型时的 3 通道复制缓冲
         std::vector<unsigned char> alpha_chain_out;  // 工单 43：alpha 模型输出取第 0 通道后的单通道缓冲
-        if (c == 4 && opt.format != PATHSTR("jpg"))
+        if (c == 4 && file_fmt.enc != PATHSTR("jpg"))
         {
             has_alpha = true;
             alpha_src.resize((size_t)w * h);
@@ -886,16 +942,29 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         if (single_file)
         {
             std::filesystem::path in(inpath);
-            outpath = single_file_outpath(in, naming, file_denoise_seg, !use_engine, opt.no_rename);
+            outpath = single_file_outpath(in, naming, file_denoise_seg, file_fmt.ext, !use_engine, opt.no_rename);
         }
         else if (denoise_per_file && use_engine)
         {
             // 目录模式档位不一致：output_files[i] 不带扩展名，逐文件补 -nN（工单 39）
-            outpath = output_files[i] + file_denoise_seg + L"." + naming.ext;
+            outpath = dir_product_path(output_files[i], file_denoise_seg, file_fmt.ext);
         }
         else
         {
-            outpath = output_files[i] + L"." + naming.ext;
+            outpath = dir_product_path(output_files[i], std::wstring(), file_fmt.ext);
+        }
+
+        // 工单 70：本轮的产物路径又出现（如 AUTO 逐文件档位下两个同名输入解析出同一档位）→ 拒绝写盘、按 IO 失败计。跑前的守卫能盖住大部分情形，但「逐文件档位在运行期才定」那一路盖不住，
+        // 而静默覆盖的代价是丢产物且日志两行都显示成功（源图也不会被删 —— 走不到删除那一步）。
+        // 每个序号只过一次本循环，故命中即必是别的输入写的（无需再比序号）
+        {
+            const std::wstring key = canonical_path_key(outpath);
+            if (written.find(key) != written.end())
+            {
+                fail(false, "output path already written by another input", outpath);
+                continue;
+            }
+            written[key] = (size_t)i;
         }
 
         // 工单 58：产物路径与输入路径相同（同目录 + 同扩展名，NTFS 下大小写不敏感）时直接原地覆盖
@@ -1080,9 +1149,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             outimage = ncnn::Mat(outimage.w, outimage.h, (void*)alpha_merged.data(), (size_t)4, 4);
         }
 
-        // 编码（按输出格式；质量参数作用于 jpg/webp）
+        // 编码（按输出格式；质量参数作用于 jpg/webp）—— file_fmt.enc 是本文件的编码器（工单 71）
         bool save_ok = false;
-        if (opt.format == PATHSTR("jpg"))
+        if (file_fmt.enc == PATHSTR("jpg"))
         {
             MemBuffer buf;
             if (stbi_write_jpg_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, opt.quality))
@@ -1090,7 +1159,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                 save_ok = write_file_wide(outpath, buf.data.data(), buf.data.size());
             }
         }
-        else if (opt.format == PATHSTR("png"))
+        else if (file_fmt.enc == PATHSTR("png"))
         {
             MemBuffer buf;
             if (stbi_write_png_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, outimage.w * outimage.elempack))
@@ -1169,6 +1238,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     int target_value = 0;
     bool target_is_width = true;
     path_t format = PATHSTR("jpg");
+    bool format_same = false; // 工单 71：-f same —— 逐文件跟随输入格式
     int quality = 90;
     int tilesize_arg = 0;
     int gpuid_arg = -1000; // -1000 = auto
@@ -1244,7 +1314,20 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         }
         else if (wcscmp(a, L"-f") == 0 && i + 1 < argc)
         {
-            format = argv[++i];
+            std::wstring f = argv[++i];
+            if (f == L"same") // 工单 71：逐文件跟随输入格式
+            {
+                // 末次生效：`-f bad -f same` 里最后一个参数是 same，就该按 same 跑 ——
+                // format 归位默认值，否则校验会拿前一个非法值报 EXIT_PARAM
+                format_same = true;
+                format = PATHSTR("jpg");
+            }
+            else
+            {
+                // 末次生效（与其它标量项一致）：`-f same -f jpg` 不该让后一个被静默忽略
+                format_same = false;
+                format = f;
+            }
         }
         else if (wcscmp(a, L"-q") == 0 && i + 1 < argc)
         {
@@ -1312,9 +1395,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     bool target_mode = width_given || height_given;
 
     // ---- 参数校验（全部 -> EXIT_PARAM） ----
+    // 工单 71：`-f same` 已在解析时置 format_same，此时 format 保持默认 jpg（不参与编码）
     if (wcscmp(format.c_str(), L"jpg") != 0 && wcscmp(format.c_str(), L"png") != 0 && wcscmp(format.c_str(), L"webp") != 0)
     {
-        log_err("invalid format argument (jpg/png/webp)\n");
+        log_err("invalid format argument (jpg/png/webp/same)\n");
         return EXIT_PARAM;
     }
 
@@ -1432,7 +1516,6 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     const int run_scale = target_mode ? mi->scales.back() : (int)scale_arg;
 
     // ---- 收集输入文件与输出路径 ----
-    std::wstring wext = format;
     bool input_is_dir = path_is_directory(inputpath);
     const bool single_file = !input_is_dir;
     // 目录 + AUTO 且各文件档位不一致时，逐文件在产物名里补 -nN（工单 39）
@@ -1442,9 +1525,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     std::vector<path_t> output_files;
 
     auto ext_is_image = [](const path_t& ext) {
-        path_t e = ext;
-        std::transform(e.begin(), e.end(), e.begin(), ::towlower);
-        return e == PATHSTR("jpg") || e == PATHSTR("jpeg") || e == PATHSTR("png") || e == PATHSTR("webp");
+        // 工单 71：复用 encoder_of_input_extension 的扩展名集合（原先这里另拄一份）——
+        // 两份手写集合的后果是只改一处时 `-f same` 拿到空编码器，静默落进 WebP 分支，
+        // 写出与产物后缀不符的字节
+        return !encoder_of_input_extension(ext).empty();
     };
 
     if (input_is_dir)
@@ -1473,12 +1557,17 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 工单 68：关闭后缀段时目录名与产物名都不带任何段，逐文件档位只决定加载哪份权重、不进产物名
         // （与单文件 no_rename 同款），因此这一段不参与、denoise_per_file 保持 false
         std::wstring dir_denoise_seg = denoise_seg;
+        // 工单 71：AUTO 探测的格式参数用**本文件**的编码器（`-f same` 时跟随输入），
+        // 与 run_files 的 alpha 口径一致（探测只影响 alpha 是否拍平，估计器只看 RGB）
         if (denoise_auto && !no_rename)
         {
-            int first_level = probe_denoise_level(found.front().first.wstring(), wext);
+            auto probe_enc = [&](const path_t& p) {
+                return output_format_of(p, format_same, format).enc;
+            };
+            int first_level = probe_denoise_level(found.front().first.wstring(), probe_enc(found.front().first.wstring()));
             bool uniform = true;
             for (size_t i = 1; i < found.size() && uniform; i++)
-                uniform = probe_denoise_level(found[i].first.wstring(), wext) == first_level;
+                uniform = probe_denoise_level(found[i].first.wstring(), probe_enc(found[i].first.wstring())) == first_level;
 
             denoise_per_file = !uniform;
             dir_denoise_seg = denoise_per_file ? L"-nX" : (L"-n" + std::to_wstring(first_level));
@@ -1488,50 +1577,42 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 产物落**源文件同目录**（原文件名 + 输出格式扩展名），不再另建「-(模型名)-nN-倍率」输出目录
         // 例外：与「删除输入文件」合用即整树原地转换/覆盖，二次运行会把产物当输入再跑一轮（票面已收录）
         std::error_code ec;
-        if (!no_rename)
+        const std::filesystem::path out_dir_path = in.parent_path() / (in.filename().wstring() + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
+        for (auto& pair : found)
         {
-            std::filesystem::path out_dir_path = in.parent_path() / (in.filename().wstring() + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
-            std::filesystem::create_directories(out_dir_path, ec);
-            if (ec)
-            {
-                log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(out_dir_path.wstring()).c_str(), ec.message().c_str());
-                return EXIT_IO;
-            }
-            for (auto& pair : found)
-            {
-                input_files.push_back(pair.first.wstring());
-                std::filesystem::create_directories(out_dir_path / pair.second.parent_path(), ec);
-                path_t stem = get_file_name_without_extension(pair.second.filename().wstring());
-                // 扩展名与降噪段在 run_files 逐文件拼（档位不一致时每文件不同）
-                output_files.push_back((out_dir_path / pair.second.parent_path() / stem).wstring());
-            }
-        }
-        else
-        {
-            for (auto& pair : found)
-            {
-                input_files.push_back(pair.first.wstring());
-                // 扩展名在 run_files 里拼；无降噪段（产物名不带任何段）
-                path_t stem = get_file_name_without_extension(pair.second.filename().wstring());
+            input_files.push_back(pair.first.wstring());
+            path_t stem = get_file_name_without_extension(pair.second.filename().wstring());
+            if (no_rename)
                 output_files.push_back((pair.first.parent_path() / stem).wstring());
-            }
+            else
+                output_files.push_back((out_dir_path / pair.second.parent_path() / stem).wstring());
+        }
 
-            // 工单 68（评审 P1）：产物落进输入树，撞车有两种，两种都要在跑之前拒绝：
-            //   ① 产物撞上**同批的另一个输入文件** —— 同目录 a.png + a.jpg 配 -f jpg：a.png 的产物就是 a.jpg
-            //   ② 两个产物彼此同路 —— a.png + a.jpeg 配 -f jpg（两个 stem 都是 a）、
-            //      或 a.png + a.jpg 配 -f webp（两者都产出 a.webp）
-            // 不拒的后果都是静默的：某个文件从未被处理（原内容被先写出的产物盖掉），或读到上一文件刚写出的
-            // 产物而被放大两轮；配 --delete-input 更会连源图一起消失（两张源图都被删、只剩一张产物）。
-            // 与工单 58 的「产物覆盖自己」（同一文件）不冲突：那种情况 index 相同，两条都放行。
-            // 只守 no_rename 这一路：开后缀段时产物进独立输出目录，同 stem 撞车（a.png + a.jpeg 配 -f jpg）
-            // 是**既有行为**（产物名带后缀段，工单 02/39 命名规则下同 stem 必然同路），本票不改，已记入票面遗留观察。
+        // 工单 70：跑前撞车守卫（**两条命名路径都适用**，工单 68 只守了关闭后缀段那一路）：
+        //   ① 产物撞上**同批的另一个输入文件** —— 关后缀段 + 同目录 a.png + a.jpg 配 -f jpg：
+        //      a.png 的产物就是 a.jpg 本身
+        //   ② 两个产物彼此同路 —— a.png + a.jpeg 配 -f jpg（两个 stem 都是 a）、
+        //      a.png + a.jpg 配 -f webp（都产出 a.webp）、开后缀段的 1.jpg + 1.png 配 -f jpg
+        // 不拒的后果都是静默的：某个文件从未被处理（原内容被先写出的产物盖掉），或读到上一文件刚写出的
+        // 产物而被放大两轮；配 --delete-input 更会连源图一起消失（两张源图都被删、只剩一张产物）。
+        // 与工单 58 的「产物覆盖自己」（同一文件）不冲突：那种情况 index 相同，两条都放行。
+        // 逐文件档位（AUTO 档位不一致）时产物名在运行期才定 → 这一路跳过跑前检查，由 run_files 的
+        // 运行期守卫（同一个 canonical 键）兜住。
+        if (!denoise_per_file)
+        {
+            auto product_path = [&](size_t i) {
+                // 与 run_files 同口径：产物 = output_files[i] + "." + 本文件扩展名
+                // （目录模式的降噪段只进**目录名**，不进文件名；单文件的段由 single_file_outpath 处理）
+                return dir_product_path(output_files[i], std::wstring(),
+                                        output_format_of(input_files[i], format_same, format).ext);
+            };
             std::map<std::wstring, size_t, OrdinalLess> by_input;
             for (size_t i = 0; i < input_files.size(); i++)
                 by_input[canonical_path_key(input_files[i])] = i;
             std::map<std::wstring, size_t, OrdinalLess> by_product;
             for (size_t i = 0; i < output_files.size(); i++)
             {
-                const std::wstring key = canonical_path_key(output_files[i] + L"." + wext);
+                const std::wstring key = canonical_path_key(product_path(i));
                 auto in_it = by_input.find(key);
                 auto out_it = by_product.find(key);
                 if (in_it != by_input.end() && in_it->second != i)
@@ -1546,13 +1627,25 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
                 {
                     log_err("outputs of %s and %s are the same file: %s\n",
                             iu_to_utf8(input_files[i]).c_str(), iu_to_utf8(input_files[out_it->second]).c_str(),
-                            iu_to_utf8(output_files[i] + L"." + wext).c_str());
-                    log_err("(with --no-rename the output keeps the original name, so two inputs whose names\n"
-                            " differ only by extension write to one output; use the suffix segment or split them)\n");
+                            iu_to_utf8(product_path(i)).c_str());
+                    log_err("(two inputs with the same name but different extensions write to one output;\n"
+                            " use \"-f same\" to keep each input's own format, or split them)\n");
                     return EXIT_PARAM;
                 }
                 by_product[key] = i;
             }
+        }
+
+        if (!no_rename)
+        {
+            std::filesystem::create_directories(out_dir_path, ec);
+            if (ec)
+            {
+                log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(out_dir_path.wstring()).c_str(), ec.message().c_str());
+                return EXIT_IO;
+            }
+            for (auto& pair : found)
+                std::filesystem::create_directories(out_dir_path / pair.second.parent_path(), ec);
         }
     }
     else
@@ -1664,7 +1757,6 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     // （漏填即静默取默认值）；format 空串既非哨兵也无人校验，会落进 WebP 分支，不报错
     const NamingSegments naming = [&] {
         NamingSegments n;
-        n.ext = wext;
         n.display = wdisplay;
         n.denoise_seg = denoise_seg;
         n.scale_seg = scale_seg;
@@ -1674,6 +1766,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     const RunOptions opt = [&] {
         RunOptions o;
         o.format = format;
+        o.format_same = format_same;
         o.quality = quality;
         o.run_scale = run_scale;
         o.target_mode = target_mode;

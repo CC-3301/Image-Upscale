@@ -7,7 +7,7 @@ import ctypes
 
 from PIL import Image
 
-from conftest import MODEL, make_png, needs_engine, run_engine
+from conftest import MODEL, make_jpg, make_png, needs_engine, run_engine
 
 MODEL_TAG = f"({MODEL})"
 
@@ -151,6 +151,28 @@ def test_delete_input_folder_with_no_rename_converts_in_place(workdir):
     assert p.returncode == 0, p.stderr
     assert sorted(x.name for x in folder.iterdir()) == ["a.jpg", "b.jpg"]
     assert Image.open(folder / "a.jpg").size == (128, 128)
+
+
+@needs_engine
+def test_delete_input_matches_full_name_not_stem(workdir):
+    """删除输入文件按**完整文件名**匹配：输入 1.jpg 就删 1.jpg，同目录的 1.png 一个字节不动
+
+    单文件输入时另一张根本不是输入，自然不该被碰；本用例把「按全名而非按去扩展名的 stem 删」钉住。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    target = folder / "1.jpg"
+    bystander = folder / "1.png"
+    make_jpg(target, size=(32, 32))
+    make_png(bystander, size=(32, 32))
+    bystander_before = bystander.read_bytes()
+
+    p = run_engine(["-i", target, "-f", "png", "-g", "-1", "--delete-input"])
+    assert p.returncode == 0, p.stderr
+    assert not target.exists()
+    assert bystander.read_bytes() == bystander_before
+    # 产物照常写出（用默认命名，避开「产物正好叫 1.png」而盖住旁观文件的那个语义）
+    assert {x.name for x in folder.iterdir()} == {"1.png", f"1-{MODEL_TAG}-n0-2.0x.png"}
 
 
 @needs_engine
