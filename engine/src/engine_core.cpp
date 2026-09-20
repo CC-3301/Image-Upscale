@@ -1542,27 +1542,33 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
 
     // 工单 61：命名段与运行参数各打包一次，三个架构分支共用同一份实参表
     // （原先 23 个位置实参逐字重复三遍，相邻同类型参数传错顺序编译器不报错）
-    // 工单 65：一律具名赋值——C++17 无可指代初始化器，花括号实参表在换序/中途插字段时
-    // 相邻同类型字段会静默错位且编译器不报错；具名赋值下换序天然安全，漏填由上面
-    // 各字段的「未设置」类内初值兜底
-    NamingSegments naming;
-    naming.ext = wext;
-    naming.display = wdisplay;
-    naming.denoise_seg = denoise_seg;
-    naming.scale_seg = scale_seg;
+    // 工单 65：一律具名赋值（IIFE 取返回值以保留 const）——C++17 无指定初始化器，花括号实参表
+    // 在换序/中途插字段时相邻同类型字段会静默错位且编译器不报错；具名赋值下换序天然安全，
+    // 漏填由上面各字段的「未设置」类内初值兜底
+    const NamingSegments naming = [&] {
+        NamingSegments n;
+        n.ext = wext;
+        n.display = wdisplay;
+        n.denoise_seg = denoise_seg;
+        n.scale_seg = scale_seg;
+        return n;
+    }();
 
-    RunOptions opt;
-    opt.format = format;
-    opt.quality = quality;
-    opt.run_scale = run_scale;
-    opt.target_mode = target_mode;
-    opt.target_value = target_value;
-    opt.target_is_width = target_is_width;
-    opt.down_filter = down_filter;
-    opt.tilesize = tilesize;
-    opt.denoise_auto = denoise_auto;
-    opt.verbose = verbose != 0;
-    opt.no_rename = no_rename;
+    const RunOptions opt = [&] {
+        RunOptions o;
+        o.format = format;
+        o.quality = quality;
+        o.run_scale = run_scale;
+        o.target_mode = target_mode;
+        o.target_value = target_value;
+        o.target_is_width = target_is_width;
+        o.down_filter = down_filter;
+        o.tilesize = tilesize;
+        o.denoise_auto = denoise_auto;
+        o.verbose = verbose != 0;
+        o.no_rename = no_rename;
+        return o;
+    }();
     auto run_arch = [&](auto* engine) {
         return run_files(engine, models_dir, *mi, input_files, output_files, single_file, denoise_per_file,
                          denoise_level, naming, opt);
