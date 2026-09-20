@@ -638,7 +638,7 @@ struct NamingSegments
 // 漏填不会被当成有效值；tilesize=0 等于 CLI 的「自动」，down_filter 等于 CLI 默认的 Lanczos
 struct RunOptions
 {
-    path_t format;                       // 输出编码容器（jpg/png/webp）；空串 = 未设置
+    path_t format;                       // 输出编码容器（jpg/png/webp）；空串不是哨兵：无人校验，会落进 WebP 分支
     int quality = -1;                    // jpg/webp 质量（合法域 0-100）
     int run_scale = 0;                   // 倍率模式的原生倍数（合法域 ≥1）
     bool target_mode = false;            // 目标尺寸模式
@@ -1544,9 +1544,9 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     // （原先 23 个位置实参逐字重复三遍，相邻同类型参数传错顺序编译器不报错）
     // 工单 65：一律具名赋值（IIFE 取返回值以保留 const）——C++17 无指定初始化器，花括号实参表
     // 在换序/中途插字段时相邻同类型字段会静默错位且编译器不报错；具名赋值下换序天然安全，
-    // 漏填由类内初值兜底：format 空串 / quality=-1 / run_scale=0 / target_value=0 是各自合法域
-    // 以外的「未设置」哨兵，而 tilesize=0 与 down_filter=RF_LANCZOS3 本就是 CLI 的「自动」
-    // 与默认 Lanczos（漏填即静默取该默认值，不是哨兵）
+    // 漏填由类内初值兜底：quality=-1 / run_scale=0 / target_value=0 是各自合法域以外的「未设置」
+    // 哨兵；而 tilesize=0 与 down_filter=RF_LANCZOS3 本就是 CLI 的「自动」与默认 Lanczos
+    // （漏填即静默取默认值）；format 空串既非哨兵也无人校验，会落进 WebP 分支，不报错
     const NamingSegments naming = [&] {
         NamingSegments n;
         n.ext = wext;
