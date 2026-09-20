@@ -86,8 +86,8 @@ public partial class MainWindow : Window
     // 工单 51：产物后缀段开关的用户选择（true = 开）。灰置状态下的显示值（「开」）不是用户选择，
     // 故另存一份记忆值；setting.ini 键 LastAddSuffix（1 = 开，与 v0.2.8 现状一致）。
     // 工单 60：默认值引用 SettingsStore.DefaultAddSuffix（单一定义来源）
-    private bool _addSuffix = SettingsStore.DefaultAddSuffix;
-    // 程序化切换（灰置跟随 / 恢复记忆值）不写回 _addSuffix，否则文件夹输入时会把灰置值当成用户选择
+    private bool _suffixEnabled = SettingsStore.DefaultAddSuffix;
+    // 程序化切换（灰置跟随 / 恢复记忆值）不写回 _suffixEnabled，否则文件夹输入时会把灰置值当成用户选择
     private bool _suppressAddSuffixWrite;
 
     public MainWindow()
@@ -113,7 +113,7 @@ public partial class MainWindow : Window
         // 清单为空时早退，只在那里赋值会让 OnClosing 拿初值 Lanczos 把用户存的 Box 抹掉）
         var dfIdx = Array.IndexOf(SettingsStore.DownFilterTokens, s.DownFilter);
         DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : SettingsStore.DefaultDownFilterIndex;
-        _addSuffix = s.AddSuffix;
+        _suffixEnabled = s.AddSuffix;
         // 工单 49：降噪记忆初值 —— 与后缀开关同理（RestoreSettings 在 models 缺失时早退，
         // 若只在那里读，“退出时写回”会拿初值把用户存的档位抹成默认）
         _denoiseGlobal = s.Denoise;
@@ -362,7 +362,7 @@ public partial class MainWindow : Window
         var isFile = IsFileInput(InputBox.Text);
         // 显示值：文件输入 = 记忆值；文件夹/空/无效路径 = 默认值「开」（灰置值即实际生效值）
         _suppressAddSuffixWrite = true;
-        AddSuffixBox.SelectedIndex = SettingsStore.AddSuffixToIndex(isFile ? _addSuffix : SettingsStore.DefaultAddSuffix);
+        AddSuffixBox.SelectedIndex = SettingsStore.SuffixIndexFrom(isFile ? _suffixEnabled : SettingsStore.DefaultAddSuffix);
         _suppressAddSuffixWrite = false;
         AddSuffixBox.IsEnabled = isFile;
     }
@@ -371,7 +371,7 @@ public partial class MainWindow : Window
     {
         if (_suppressAddSuffixWrite)
             return;
-        _addSuffix = SettingsStore.AddSuffixFromIndex(AddSuffixBox.SelectedIndex);
+        _suffixEnabled = SettingsStore.SuffixEnabledFromIndex(AddSuffixBox.SelectedIndex);
     }
 
     private void OnBrowse(object sender, RoutedEventArgs e)
@@ -418,8 +418,8 @@ public partial class MainWindow : Window
         // 工单 27：参数走数组（P/Invoke wchar_t**），无需引号转义；--models-dir 由 GUI 显式传入
         var args = new List<string> { "-i", input, "-m", m.Id, "--models-dir", _modelsDir };
         // 工单 50：文件输入 + 「文件添加扩展名」关 → 产物用原文件名（不加后缀段）。
-        // 文件夹输入忽略该开关；且灰置时的显示值「开」不代表记忆值，故按 IsFileInput + _addSuffix 判断
-        if (IsFileInput(input) && !_addSuffix)
+        // 文件夹输入忽略该开关；且灰置时的显示值「开」不代表记忆值，故按 IsFileInput + _suffixEnabled 判断
+        if (IsFileInput(input) && !_suffixEnabled)
             args.Add("--no-rename");
 
         if (ModeScale.IsChecked == true)
@@ -585,7 +585,7 @@ public partial class MainWindow : Window
         s.DownFilter = SettingsStore.DownFilterTokenAt(DownFilterBox.SelectedIndex);
 
         // 工单 51：后缀开关（同样与模型无关；写记忆值而非灰置时的显示值）
-        s.AddSuffix = _addSuffix;
+        s.AddSuffix = _suffixEnabled;
 
         // 工单 49：降噪记忆 —— 全局槽写当前值，独立槽按已加载模型清单生成（没被用户碰过的模型
         // 写其默认档，键因此在 setting.ini 里总是可见）；键名按 ini 语法回读
@@ -653,11 +653,11 @@ public class SettingsStore
 
     // 下拉当前选中项 → 是否带后缀段：指到表内的项（0 = 开 / 1 = 关）按表判，**未选中/越界才回退
     // DefaultAddSuffix**（与 Load 的非法值回退一致）—— 回退分支不吞合法项，默认值翻转也不改表内语义。
-    // 与 AddSuffixToIndex 在 0 / 1 两态上互为逆
-    internal static bool AddSuffixFromIndex(int selectedIndex)
+    // 与 SuffixIndexFrom 在 0 / 1 两态上互为逆
+    internal static bool SuffixEnabledFromIndex(int selectedIndex)
         => selectedIndex >= 0 && selectedIndex < AddSuffixLabels.Length ? selectedIndex == 0 : DefaultAddSuffix;
 
-    internal static int AddSuffixToIndex(bool addSuffix) => addSuffix ? 0 : 1;
+    internal static int SuffixIndexFrom(bool addSuffix) => addSuffix ? 0 : 1;
 
     // 工单 49：降噪档位表（**单一定义来源**，照 DownFilterTokens/Labels 模式）——下标 = 档位 + 1
     // （0 = 自动 = -1 档 …）；界面标签、setting.ini token、引擎取值三处共用
