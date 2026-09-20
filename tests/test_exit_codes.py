@@ -75,6 +75,6 @@ def test_empty_folder_is_param_error(workdir):
 @needs_engine
 def test_unsupported_input_extension_is_param_error(workdir):
     inp = workdir / "A.gif"
-    make_png(inp)  # 内容 png 但后缀 gif → 后缀匹配拒绝
+    make_png(inp)  # 真 GIF（make_png 按传入路径的后缀编码）：拒绝理由是扩展名不受支持
     p = run_engine(["-i", inp, "-g", "-1"])
     assert p.returncode == 1
