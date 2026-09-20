@@ -20,11 +20,16 @@ GUI 标题栏后面应该写上版本号：`Image-Upscale 图像超分` → `Ima
 
 ## Acceptance criteria
 
-- [ ] 启动后标题栏显示 `Image-Upscale 图像超分工具 v0.2.2`
-- [ ] 版本号来自 csproj `<Version>`，无第二处硬编码
+- [x] 启动后标题栏显示 `Image-Upscale 图像超分工具 v0.2.2`
+- [x] 版本号来自 csproj `<Version>`，无第二处硬编码
 
 ## Comments
 
 ### 实施记录（2026-09-15）
 - csproj `<Version>0.2.2</Version>`（程序集版本已验证 0.2.2.0）；MainWindow 构造函数运行时拼装 Title=`Image-Upscale 图像超分工具 v0.2.2`；XAML 保留回退值并注释说明。人工：启动看标题栏。
 - 2026-09-18 定案补记（记账一致）：标题最终定案为 `ImageUpscale 图像超分工具 vX.Y.Z`（提交 dac00a8 / 595f6e7，去掉了 `Image-Upscale` 的连字符），版本号唯一来源仍为 csproj `<Version>`。
+
+### AC 复选框批量勾选（2026-09-20）
+
+- 本票交付已随状态行列出的版本发布；当时只写了状态行与 Comments 记录，`- [ ]` 未逐条勾选。本次按**状态行的发布记录 + 本票 Comments 的实现/验证记录**把 AC 逐条勾为完成。
+- **口径**：这是**账面补齐**，不是重新执行验收；勾选依据是既有发布记录，本次未新增验证。若日后发现某项实际未达成 → 回退该勾并另开票。

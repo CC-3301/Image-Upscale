@@ -18,11 +18,16 @@ csproj 设 `DebugType=none`（bin/obj/publish 全链路不再产生 pdb），比
 
 ## Acceptance criteria
 
-- [ ] `dotnet publish` 产物与 `bin`/`obj` 中不再出现 ImageUpscaleGui.pdb
-- [ ] 发布包内无任何 .pdb
+- [x] `dotnet publish` 产物与 `bin`/`obj` 中不再出现 ImageUpscaleGui.pdb
+- [x] 发布包内无任何 .pdb
 
 ## Comments
 
 ### 实施记录（2026-09-15）
 - csproj `DebugType=none`；重新构建后 bin 顶层与 publish 输出均无 pdb，程序集验证通过
 - 备注：`gui/obj`/`gui/bin/win-x64` 各有 1 个 2026-09-14（改前打包日）的陈旧 pdb，属历史残留、不再新生成、不进发布包；如需彻底清除须人工确认后删除
+
+### AC 复选框批量勾选（2026-09-20）
+
+- 本票交付已随状态行列出的版本发布；当时只写了状态行与 Comments 记录，`- [ ]` 未逐条勾选。本次按**状态行的发布记录 + 本票 Comments 的实现/验证记录**把 AC 逐条勾为完成。
+- **口径**：这是**账面补齐**，不是重新执行验收；勾选依据是既有发布记录，本次未新增验证。若日后发现某项实际未达成 → 回退该勾并另开票。

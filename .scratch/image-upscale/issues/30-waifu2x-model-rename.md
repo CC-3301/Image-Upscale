@@ -35,9 +35,9 @@ waifu2x 系列模型应该加上 waifu2x_ 的前缀，并且 upconv_7_anime 改�
 
 ## Acceptance criteria
 
-- [ ] fetch-models.ps1 重跑后目录名与新清单一致
-- [ ] GUI 模型下拉显示新名；选 waifu2x_upconv_7_art 处理输出 `A-(waifu2x_upconv_7_art)-2.0x.jpg`
-- [ ] pytest 全绿（含模型定位、命名、降噪映射）
+- [x] fetch-models.ps1 重跑后目录名与新清单一致
+- [x] GUI 模型下拉显示新名；选 waifu2x_upconv_7_art 处理输出 `A-(waifu2x_upconv_7_art)-2.0x.jpg`
+- [x] pytest 全绿（含模型定位、命名、降噪映射）
 
 ## Comments
 
@@ -47,3 +47,8 @@ waifu2x 系列模型应该加上 waifu2x_ 的前缀，并且 upconv_7_anime 改�
 - fetch-models.ps1 的 Extract-Prefix 目标目录同步（zip 内原始前缀不变，落盘名改名）
 - 引擎默认 `-m` 与 usage 文案、conftest `IU_MODEL` 默认值、全部测试断言名同步
 - 验证：引擎重建 + pytest 68 全绿（含全部打包模型冒烟、降噪命名、manifest 定位）
+
+### AC 复选框批量勾选（2026-09-20）
+
+- 本票交付已随状态行列出的版本发布；当时只写了状态行与 Comments 记录，`- [ ]` 未逐条勾选。本次按**状态行的发布记录 + 本票 Comments 的实现/验证记录**把 AC 逐条勾为完成。
+- **口径**：这是**账面补齐**，不是重新执行验收；勾选依据是既有发布记录，本次未新增验证。若日后发现某项实际未达成 → 回退该勾并另开票。

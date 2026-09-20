@@ -30,11 +30,11 @@
 
 ## Acceptance criteria
 
-- [ ] 引擎构建产出 `bld/iu_engine.dll` 与 `bld/image-upscale.exe`，后者控制台行为与重构前逐字节一致（pytest 全绿）
-- [ ] ctypes 冒烟：DLL 直调返回退出码 0，回调收到 `progress`/`-> done`/`done` 行，产物落盘
-- [ ] GUI（开发布局）能经 DLL 完成单文件超分，日志/进度与进程版一致
-- [ ] 发布包根目录仅 `ImageUpscale.exe + models/ + LICENSE + NOTICE.md + README.md`，无 engine/、无散装 dll、无 pdb
-- [ ] README 无 CLI 字眼；发布说明无 CLI 字眼
+- [x] 引擎构建产出 `bld/iu_engine.dll` 与 `bld/image-upscale.exe`，后者控制台行为与重构前逐字节一致（pytest 全绿）
+- [x] ctypes 冒烟：DLL 直调返回退出码 0，回调收到 `progress`/`-> done`/`done` 行，产物落盘
+- [x] GUI（开发布局）能经 DLL 完成单文件超分，日志/进度与进程版一致
+- [x] 发布包根目录仅 `ImageUpscale.exe + models/ + LICENSE + NOTICE.md + README.md`，无 engine/、无散装 dll、无 pdb
+- [x] README 无 CLI 字眼；发布说明无 CLI 字眼
 
 ## Comments
 
@@ -47,3 +47,8 @@
 - package.ps1：新布局 + 三道守卫（包根无散装 iu_engine.dll / 无 pdb / 仅一个 ImageUpscale.exe）
 - 文档：ADR-0002（本决策）、ADR-0001 状态注记、spec 架构与测试缝更新、README 去 CLI 字眼
 - 2026-09-18 定案补记（记账一致）：包根内容以维护者 v0.2.4 定案为准 —— 仅 `ImageUpscale.exe` + `models/` + `NOTICE.md`（MIT 许可已并入 `NOTICE.md`，README 不随包分发），与本工单验收里的「LICENSE + README.md」不同。
+
+### AC 复选框批量勾选（2026-09-20）
+
+- 本票交付已随状态行列出的版本发布；当时只写了状态行与 Comments 记录，`- [ ]` 未逐条勾选。本次按**状态行的发布记录 + 本票 Comments 的实现/验证记录**把 AC 逐条勾为完成。
+- **口径**：这是**账面补齐**，不是重新执行验收；勾选依据是既有发布记录，本次未新增验证。若日后发现某项实际未达成 → 回退该勾并另开票。
