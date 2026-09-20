@@ -623,6 +623,7 @@ static bool resolve_model_files(const std::wstring& models_dir, const ModelInfo&
 
 // 产物名的命名段（工单 02 命名规则 / 工单 39 逐文件档位 / 工单 50 无后缀）
 // 工单 61：run_files 与 single_file_outpath 共用同一份，不再逐个位置传参
+// 工单 65：构造一律具名赋值，不依赖字段顺序
 // 四个字段都是 std::wstring，默认构造即空串（= 未设置），不再写类内初值
 struct NamingSegments
 {
@@ -632,19 +633,19 @@ struct NamingSegments
     std::wstring scale_seg;   // 倍率/尺寸段（2.0x / 128x）
 };
 
-// 运行期标量参数（工单 61）：**字段顺序即聚合初始化的实参顺序，不得换序**
+// 运行期标量参数（工单 61）：构造一律具名赋值（工单 65），不依赖字段顺序
 // 类内初值取「未设置」语义：quality=-1 / run_scale=0 / target_value=0 均在各自合法域之外，
-// 漏填不会被当成有效值；tilesize=0 与 down_filter=0 分别等于 CLI 的「自动」与 Lanczos 默认
+// 漏填不会被当成有效值；tilesize=0 等于 CLI 的「自动」，down_filter 等于 CLI 默认的 Lanczos
 struct RunOptions
 {
-    path_t format;                // 输出编码容器（jpg/png/webp）；空串 = 未设置
-    int quality = -1;             // jpg/webp 质量（合法域 0-100）
-    int run_scale = 0;            // 倍率模式的原生倍数（合法域 ≥1）
-    bool target_mode = false;     // 目标尺寸模式
-    int target_value = 0;         // 目标宽或高（合法域 >0）
-    bool target_is_width = true;  // target_value 是宽（与 CLI 默认一致）
-    int down_filter = 0;          // 降采样滤镜（0 = Lanczos）
-    int tilesize = 0;             // 0 = 按显存自动
+    path_t format;                       // 输出编码容器（jpg/png/webp）；空串 = 未设置
+    int quality = -1;                    // jpg/webp 质量（合法域 0-100）
+    int run_scale = 0;                   // 倍率模式的原生倍数（合法域 ≥1）
+    bool target_mode = false;            // 目标尺寸模式
+    int target_value = 0;                // 目标宽或高（合法域 >0）
+    bool target_is_width = true;         // target_value 是宽（与 CLI 默认一致）
+    int down_filter = RF_LANCZOS3;       // 降采样滤镜（与 CLI 默认同源：RF_LANCZOS3）
+    int tilesize = 0;                    // 0 = 按显存自动
     bool denoise_auto = false;
     bool verbose = false;
     bool no_rename = false;
@@ -1541,9 +1542,27 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
 
     // 工单 61：命名段与运行参数各打包一次，三个架构分支共用同一份实参表
     // （原先 23 个位置实参逐字重复三遍，相邻同类型参数传错顺序编译器不报错）
-    const NamingSegments naming{wext, wdisplay, denoise_seg, scale_seg};
-    const RunOptions opt{format, quality, run_scale, target_mode, target_value, target_is_width,
-                         down_filter, tilesize, denoise_auto, verbose != 0, no_rename};
+    // 工单 65：一律具名赋值——C++17 无可指代初始化器，花括号实参表在换序/中途插字段时
+    // 相邻同类型字段会静默错位且编译器不报错；具名赋值下换序天然安全，漏填由上面
+    // 各字段的「未设置」类内初值兜底
+    NamingSegments naming;
+    naming.ext = wext;
+    naming.display = wdisplay;
+    naming.denoise_seg = denoise_seg;
+    naming.scale_seg = scale_seg;
+
+    RunOptions opt;
+    opt.format = format;
+    opt.quality = quality;
+    opt.run_scale = run_scale;
+    opt.target_mode = target_mode;
+    opt.target_value = target_value;
+    opt.target_is_width = target_is_width;
+    opt.down_filter = down_filter;
+    opt.tilesize = tilesize;
+    opt.denoise_auto = denoise_auto;
+    opt.verbose = verbose != 0;
+    opt.no_rename = no_rename;
     auto run_arch = [&](auto* engine) {
         return run_files(engine, models_dir, *mi, input_files, output_files, single_file, denoise_per_file,
                          denoise_level, naming, opt);
