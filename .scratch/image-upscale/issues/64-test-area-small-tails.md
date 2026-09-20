@@ -44,10 +44,10 @@
 
 ### 批次收口（2026-09-20，批次 64+65+66 一次闭环）
 
-- **交付（6 个 commit）**：`ad98cb5`（四条主改）→ `dcbbc3a`（夹具 helper 去重：webp 双重编码、jpg 中转）→ `1ae5de7`（docstring 口径 + 断言块收成 `_assert_in_place_product`）→ `9ecc6fe`（`make_png` docstring 口径）→ `92fbc6f`（`test_exit_codes` 注释口径）→ `73c586d`（删死赋值）。
+- **交付（7 个 commit）**：`ad98cb5`（四条主改）→ `dcbbc3a`（夹具 helper 去重：webp 双重编码、jpg 中转）→ `1ae5de7`（docstring 口径 + 断言块收成 `_assert_in_place_product`）→ `9ecc6fe`（`make_png` docstring 口径）→ `92fbc6f`（`test_exit_codes` 注释口径）→ `73c586d`（删死赋值）→ `aa4a71d`（删无消费者的 `return img` 与失真 docstring）。
 - **四条落实**：① 两处 webp `.tmp.png` 中转 → `conftest.make_webp`，全 `tests/` 内 `.tmp.png` 归零；② `make_gray_jpg` → `make_jpg`（docstring 写明灰度、只供结构型断言）；③ 直通缩放用例改走 `_run_in_place`（新增带默认值的 `size=` / `args=`），`_reference_product` 不再钉产物名；④ 四条原地覆盖用例齐「退出码 + 尺寸 + 格式 + PSNR」，断言块收成 `_assert_in_place_product`。
 - **同形夹具评估后不收敛（有理由，非遗漏）**：`make_rgba`（alpha 合成语义）、`_make_fine_png`（细网点同时是 PSNR 参考源）、`make_sync_fixture`（RNG 图块 + 返回 path）、`_sparse_dots`（返回 numpy、不落盘）——内容本身就是断言的一部分，强行合并等于换夹具。
 - **两轴轨迹**：r1 双 approved（5 P2）→ fix → r2 双 approved（3 P2）→ fix → r3 双 approved（2 P2）→ fix → r4（注释级 2 P2）→ fix → r5 收敛轮（spec 无新项，standards 报 1 处死赋值）→ fix → **r6 双 approved**。
 - **gate**：引擎无待编译改动 + `dotnet build gui` 0 警告 0 错误 + `pytest tests -q` **100 passed**，无跳过告警；缺引擎路径另验「15 skipped 而非 error」（lessons §3.12）。
-- **残余（记为遗留观察，不再开轮）**：`tests/test_naming.py` 的 `_assert_in_place_product` 仍 `return img` 且 docstring 说「供还要继续用它的用例取值」，但 r6 删掉唯一接收点后已无消费者——删 1 行 + 1 从句即可，纯整洁度，零行为影响。
+- **遗留观察已收口**（`aa4a71d`）：`_assert_in_place_product` 无消费者的 `return img` 与 docstring 半句已删（维护者 2026-09-20 定：这类也算小问题，当轮收）；随后两轴复审（按新立的「评审收敛线」只报 P0/P1 与新增 P2）双 approved。
 - **AC 口径说明**：票面 AC1 括号写「`rg "tmp\.png"` 只剩 conftest 一处」，实际做到 0 命中（更强）。
