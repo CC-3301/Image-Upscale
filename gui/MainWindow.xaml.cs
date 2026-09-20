@@ -657,7 +657,7 @@ public class SettingsStore
     internal static bool SuffixEnabledFromIndex(int selectedIndex)
         => selectedIndex >= 0 && selectedIndex < AddSuffixLabels.Length ? selectedIndex == 0 : DefaultAddSuffix;
 
-    internal static int SuffixIndexFrom(bool addSuffix) => addSuffix ? 0 : 1;
+    internal static int SuffixIndexFrom(bool suffixEnabled) => suffixEnabled ? 0 : 1;
 
     // 工单 49：降噪档位表（**单一定义来源**，照 DownFilterTokens/Labels 模式）——下标 = 档位 + 1
     // （0 = 自动 = -1 档 …）；界面标签、setting.ini token、引擎取值三处共用
