@@ -55,3 +55,8 @@
 - **行为零变化的依据**：6 个读写点 1:1 改名、表达式未变；`dotnet build gui` 0 警告 0 错误（XAML 引用一致）+ `pytest tests -q` **100 passed**。
 - **两轴轨迹**：r1 双 approved（1 P2 为票面口径差）→ 无修复轮（纯改名一次过）→ r2 / r3 / r5 / r6 复审均无新项。
 - **残余风险**：无。
+
+### 后续变更（工单 68，2026-09-20）
+
+- 工单 68 带来第二个开/关开关（删除输入文件），实施时把开关标签表与两个转换 helper 统一为 `Switch*`（`SwitchLabels` / `SwitchEnabledFromIndex(idx, fallback)` / `SwitchIndexFrom`），`AddSuffixLabels` / `AddSuffixEnabledFromIndex` / `AddSuffixIndexFrom` 随之消失。
+- 本票 AC1「`gui/` 内只有一族词汇（全为 `AddSuffix*` 词根）」自此**不再成立**，其实质目标改由工单 68 接管：**同一概念只有一处表与一族名字**（`rg SwitchLabels` 可证）。ini 键 `LastAddSuffix`、`DefaultAddSuffix`、`AddSuffixBox`、`s.AddSuffix` 仍不动。

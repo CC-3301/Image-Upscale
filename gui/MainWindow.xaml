@@ -1,9 +1,11 @@
 <!-- 工单 31：Title 运行时以 csproj 版本号重设，此处为设计器回退值 -->
+<!-- 工单 67：MinHeight 540 → 570 —— 新增「文件处理」栏占 74px，540 时日志框底部被切 12px
+     （实测：540 → 切 12px；560 → 余 8px；570 → 余 14px）。MinWidth 780 不变 -->
 <Window x:Class="ImageUpscaleGui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ImageUpscale 图像超分" Height="660" Width="920"
-        MinWidth="780" MinHeight="540"
+        MinWidth="780" MinHeight="570"
         AllowDrop="True" Drop="OnDrop" DragOver="OnDragOver" Closing="OnClosing"
         SizeChanged="OnWindowSizeChanged">
     <Window.Resources>
@@ -21,6 +23,12 @@
     </Window.Resources>
     <Grid Margin="14">
         <Grid.RowDefinitions>
+        <!-- 行序 = 栏序（工单 67）：0 输入 / 1 模型 / 2 尺寸模式 / 3 降噪与输出 / 4 文件处理 /
+             5 开始 / 6 分隔条 / 7 日志（* 吸收剩余高度）。**行数与下面各 Grid.Row 值必须严格一一对应**：
+             多一张或少一张定义就整列错位（Row 4 空着 → 开始落进分隔条的行、分隔条占住 MinHeight=42 的行、
+             日志落进 Auto 行不再撑开）—— 实测症状：日志框只剩 MinHeight 80、底部一大片空白、
+             与「开始处理」之间的间隔凭空多了 40px（工单 67 实施时真踩过，见票面 Comments） -->
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -37,7 +45,6 @@
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="浏览…" Width="80" Margin="6,0,0,0" Click="OnBrowse"/>
                 <TextBox x:Name="InputBox" Background="White" Height="28"
-                         TextChanged="OnInputTextChanged"
                          PreviewDragOver="OnInputPreviewDragOver" PreviewDrop="OnInputPreviewDrop"/>
             </DockPanel>
         </GroupBox>
@@ -45,51 +52,55 @@
         <!-- 模型（工单 21：A-Z 排序 / 不再显示类型与架构；v0.2.4 移除"现有模型："前缀）
              工单 51：「降采样方式」从「降噪与输出」行挪到此处，与模型下拉同行
              工单 42 实测："Catmull-Rom"在 100px 下被裁；实测控件自身开销 28px + 文字 76.1px（微软雅黑 UI 12px）= 104.1px，
-             故下拉宽度定为 106px（115 嫌宽、100 裁字）；本行实测宽度 520px（口径同下方「降噪与输出」注释：
-             780×540 窗口、UIAutomation 读子控件矩形），不换行 -->
+             故下拉宽度定为 106px（115 嫌宽、100 裁字）；工单 67：标签左 margin 16 → 20（统一口径，
+             实测 524px ≤ 可用宽 720px（口径见「降噪与输出」注释）→ 不换行 -->
         <GroupBox Grid.Row="1" Header="模型" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
                 <ComboBox x:Name="ModelBox" Width="320" SelectionChanged="OnModelChanged"/>
-                <TextBlock Text="降采样方式：" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <TextBlock Text="降采样方式：" VerticalAlignment="Center" Margin="20,0,0,0"/>
                 <!-- 工单 42：缩小路径的重采样滤镜（默认 Lanczos）；工单 43：放大不再插值，改由模型多轮完成 -->
                 <ComboBox x:Name="DownFilterBox" Width="106"/>
             </WrapPanel>
         </GroupBox>
 
-        <!-- 尺寸模式（工单 19：WrapPanel 窄窗口自动换行）
+        <!-- 工单 67：间距统一到「尺寸模式」口径 —— 组内「标签 → 其控件」紧贴（0px，单选按钮后 6px），
+             组与组之间 20px（一律由**下一组的标签**承担左 margin，旧写法是给上一控件写右 margin）。
+             渲染像素与旧写法等价（6+20 = 26 不变），只是全仓库只剩一种表达方式。
              工单 53：两个单选文案写全「指定宽度 / 指定高度」（各 +1 字 = +12px）。
-             实测口径同下方「降噪与输出」注释（780×540 窗口、UIAutomation 读子控件矩形）：
+             实测口径同下方「降噪与输出」注释（780×570 窗口 = MinWidth×MinHeight、UIAutomation 读子控件矩形）：
              改前该行 457px；改后 481px ≤ 可用宽 720px（余 239px）→ 单行不换行，MinWidth 780 不变。 -->
         <GroupBox Grid.Row="2" Header="尺寸模式" Padding="8" Margin="0,0,0,8">
             <WrapPanel>
                 <RadioButton x:Name="ModeScale" GroupName="sizemode" IsChecked="True"
                              Content="倍率" VerticalAlignment="Center"/>
-                <ComboBox x:Name="ScaleBox" Width="80" Margin="6,0,20,0"/>
-                <RadioButton x:Name="ModeWidth" GroupName="sizemode" Content="指定宽度" VerticalAlignment="Center"/>
-                <TextBox x:Name="WidthBox" Width="80" Margin="6,0,20,0"/>
-                <RadioButton x:Name="ModeHeight" GroupName="sizemode" Content="指定高度" VerticalAlignment="Center"/>
+                <ComboBox x:Name="ScaleBox" Width="80" Margin="6,0,0,0"/>
+                <RadioButton x:Name="ModeWidth" GroupName="sizemode" Content="指定宽度"
+                             VerticalAlignment="Center" Margin="20,0,0,0"/>
+                <TextBox x:Name="WidthBox" Width="80" Margin="6,0,0,0"/>
+                <RadioButton x:Name="ModeHeight" GroupName="sizemode" Content="指定高度"
+                             VerticalAlignment="Center" Margin="20,0,0,0"/>
                 <TextBox x:Name="HeightBox" Width="80" Margin="6,0,0,0"/>
             </WrapPanel>
         </GroupBox>
 
-        <!-- 降噪 + 输出（工单 51：第四组"降采样方式"已挪到「模型」栏，原位改为「文件添加扩展名」开关） -->
+        <!-- 降噪 + 输出（工单 67：「添加扩展名」已随新开关挪到下一栏「文件处理」，本栏只剩三组）
+             v0.2.4：整体一行不换行（维护者定案，用 StackPanel 非 WrapPanel）
+             工单 67 间距口径：组内「标签 → 其控件」0px；组与组之间 20px，一律由**下一组的标签**
+               承担左 margin；“该模型不支持降噪”提示占 6px 且在两组之间 —— 提示可见时
+               （digital-art-4x，最坏情况）间隔与提示隐藏时**同为 20px**，不再出现「6px 粘在一起」
+               （旧写法：降噪控件右 margin 6 + 提示右 margin 16，提示隐藏时降噪与输出格式只隔 6px）
+             实测口径（可复现）——窗口 780×570（MinWidth × MinHeight，工单 67 把 MinHeight 由 540 上调到 570）；
+               模型 digital-art-4x（唯一不支持降噪的模型，“该模型不支持降噪”提示可见 = 最坏情况）；
+               用 UIAutomation 读本组全部子控件的 BoundingRectangle：
+               内容区左边缘 = GroupBox 左边缘 + padding 8 = 70；行宽 = 最右子控件右边缘 − 内容区左边缘；
+               可用宽 = GroupBox 宽 − 左右 padding 16 = 736 − 16 = 720。
+             工单 67 实测：本行 532px（降噪 / 输出格式 / 输出质量 三组 + 提示）→ 余 188px，不裁剪；
+               同行其它栏同口径：模型 524px、尺寸模式 481px（与工单 53 的 481 逐像素一致 —— 证明本次
+               把间隔从“上一控件的右 margin”挪到“下一组标签的左 margin”没改渲染）、文件处理 362px。
+             历史数字：工单 51 时代的 716px 是「降噪 / 输出格式 / 输出质量 / 文件添加扩展名」四组那一版
+               （同一口径）；工单 67 把末组挪到「文件处理」栏并统一间距后降到 532px。
+             下拉宽 90px（“开/关”单字 12px 无需那么宽，但同栏下拉统一取 90px 观感一致） -->
         <GroupBox Grid.Row="3" Header="降噪与输出" Padding="8" Margin="0,0,0,8">
-            <!-- v0.2.4：整体一行不换行（维护者定案，用 StackPanel 非 WrapPanel）
-                 工单 42：第四组为“降采样方式”（工单 51 已挪到「模型」栏）
-                 工单 51：第四组改为「文件添加扩展名」下拉。实测口径（可复现）——
-                   窗口 780×540（MinWidth）；模型 digital-art-4x（唯一不支持降噪的模型，“该模型不支持降噪”提示可见 = 最坏情况）；
-                   用 UIAutomation 读本组全部子控件的 BoundingRectangle：
-                   行宽 = 最右子控件右边缘 − 本组内容区左边缘（GroupBox 左边缘 + padding 8）；
-                   可用宽 = GroupBox 宽 − 左右 padding 16（本尺寸下 = 736 − 16 = 720）。
-                 实测：行宽 716px ≤ 可用宽 720px（余 4px）→ 不裁剪，MinWidth 780 不变。
-                 与历史数字的关系（不让仓库并存两套口径）：
-                   ① 控件替换本身：改前同一行（末位为降采样方式组）同口径实测 726px，换成更窄的本组后 716px（−10px）；
-                   ② 旧注释的 758px/764px 与工单 42 的 734px 口径未写明，它们 ≈ 内容区内的行占位（首子控件左边缘→
-                      末子控件右边缘，本尺寸下 720px）再加 38/44px 内容区外余量；758 与 764 出现在同一段旧注释里、
-                      描述同一行却相差 6px，自相矛盾；734 与 758 相差 24px 恰等于「降采样：」→「降采样方式：」的
-                      标签增量，说明这两个数同属那套旧口径 → 与上面的“行宽”不是同一口径，不要混用；本票起以本口径为准。
-                 下拉宽 72px（“开/关”单字 12px + 控件开销 28px = 40px 即可完整显示，取 72px 与同行下拉观感一致）；
-                 下拉项由 SettingsStore.AddSuffixLabels 填充（单一定义来源，本 XAML 不写死项） -->
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="降噪：" VerticalAlignment="Center"/>
@@ -97,36 +108,51 @@
                          不齐档位（如 realcugan-pro = 无/高）各自独立记忆、默认最高可用档；
                          不支持降噪的模型灰置固定「无」；项集由 ModelEntry.DenoiseLevels 按模型能力筛选，
                          标签文案来自 SettingsStore.DenoiseLabels -->
-                    <ComboBox x:Name="DenoiseBox" Width="90" Margin="0,0,6,0" SelectionChanged="OnDenoiseChanged"/>
+                    <ComboBox x:Name="DenoiseBox" Width="90" SelectionChanged="OnDenoiseChanged"/>
                     <TextBlock x:Name="DenoiseHint" Text="该模型不支持降噪" Foreground="Gray"
-                               VerticalAlignment="Center" Margin="0,0,16,0" Visibility="Collapsed"/>
+                               VerticalAlignment="Center" Margin="6,0,0,0" Visibility="Collapsed"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="输出格式：" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="FormatBox" Width="90" Margin="0,0,16,0" SelectedIndex="0">
+                    <TextBlock Text="输出格式：" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                    <ComboBox x:Name="FormatBox" Width="90" SelectedIndex="0">
                         <ComboBoxItem Content="JPG"/>
                         <ComboBoxItem Content="PNG"/>
                         <ComboBoxItem Content="WebP"/>
                     </ComboBox>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="输出质量：" VerticalAlignment="Center"/>
+                    <TextBlock Text="输出质量：" VerticalAlignment="Center" Margin="20,0,0,0"/>
                     <!-- 工单 13 → v0.2.4：去滑条，仅手动输入（0-100），非法输入失焦回退 -->
-                    <TextBox x:Name="QualityInput" Width="48" Text="90" Margin="8,0,0,0"
+                    <TextBox x:Name="QualityInput" Width="48" Text="90"
                              TextChanged="OnQualityInputChanged" LostFocus="OnQualityInputLostFocus"/>
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="文件添加扩展名：" VerticalAlignment="Center" Margin="16,0,0,0"/>
-                    <!-- 工单 51：产物名后缀段开关（工单 50 的 no-rename 开关）；只对文件输入生效，
-                         文件夹/空/无效路径时由代码切到「开」并灰置（工单 50 定案 1）；
-                         项不写在这里 —— 由 SettingsStore.AddSuffixLabels 填充（工单 41/42 的单一定义来源惯例） -->
-                    <ComboBox x:Name="AddSuffixBox" Width="72" SelectionChanged="OnAddSuffixChanged"/>
                 </StackPanel>
             </StackPanel>
         </GroupBox>
 
-        <!-- 开始 -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,8">
+        <!-- 工单 67：新栏「文件处理」—— 产物命名与源文件去留（原「降噪与输出」行末的「文件添加扩展名」
+             携带新开关「删除输入文件」迁到此处；两者都是“输出到磁盘之后怎么处理文件”的策略，与模型/尺寸/
+             编码无关，合在一栏）。栏名备选过「格式处理」（已被本软件的「输出格式」占用，且删源文件不是格式
+             动作）与「文件命名与清理」；维护者 2026-09-20 定案为「文件处理」。
+             工单 68：「添加扩展名」自本票起**对文件夹输入同样生效且永不灰置**（撤销工单 50 定案 1）。
+             工单 69：「删除输入文件」= 产物写盘成功后删掉源文件（产物与输入同路径时跳过）。
+             同一实测口径下行宽 362px（两个开关）—— 远低于可用宽 720px，不换行。
+             两个下拉的项都不写在这里 —— 由 SettingsStore.SwitchLabels 填充（工单 41/42 的单一定义来源惯例） -->
+        <GroupBox Grid.Row="4" Header="文件处理" Padding="8" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="添加扩展名：" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="AddSuffixBox" Width="90" SelectionChanged="OnAddSuffixChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="删除输入文件：" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                    <ComboBox x:Name="DeleteInputBox" Width="90" SelectionChanged="OnDeleteInputChanged"/>
+                </StackPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- 开始（工单 67：下 margin 8 → 2 —— 按钮下方还有分隔条行占 6px，2 + 6 = 8 才与上方
+             （「文件处理」栏的 bottom margin 8）等宽；改前实测 上 8px / 下 14px） -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,2">
             <Button x:Name="StartButton" Content="开始处理" Width="140" Height="34"
                     FontSize="14" Click="OnStart"/>
             <ProgressBar x:Name="Progress" Width="360" Height="20" Margin="16,0,0,0"
@@ -135,10 +161,10 @@
         </StackPanel>
 
         <!-- 日志（工单 18：分隔条可调高度；工单 17：TextBox 可复制、自动换行） -->
-        <GridSplitter Grid.Row="5" Height="6" HorizontalAlignment="Stretch"
+        <GridSplitter Grid.Row="6" Height="6" HorizontalAlignment="Stretch"
                       VerticalAlignment="Center" ResizeBehavior="PreviousAndNext"
                       Background="Transparent"/>
-        <GroupBox Grid.Row="6" Header="日志" Padding="4" MinHeight="80">
+        <GroupBox Grid.Row="7" Header="日志" Padding="4" MinHeight="80">
             <!-- 工单 34：日志文本显式顶对齐；工单 35：字体继承全局默认（与其余 UI 同源，中文为微软雅黑），字号 16（v0.2.4 由 14 上调） -->
             <TextBox x:Name="LogBox" FontSize="16" VerticalContentAlignment="Top"
                      IsReadOnly="True" TextWrapping="Wrap"

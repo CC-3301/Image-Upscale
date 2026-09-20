@@ -91,7 +91,9 @@ static void print_usage()
     log_out("  -t tile-size         tile size (>=32/0=auto, default: 0)\n");
     log_out("  -g gpu-id            gpu device (-1=cpu, default: auto)\n");
     log_out("  --models-dir path    models directory (default: models)\n");
-    log_out("  --no-rename          name the output after the input file (no suffix segment; file input only)\n");
+    log_out("  --no-rename          name the output after the input file (no suffix segment)\n");
+    log_out("  --delete-input       delete the input file after its output is written\n");
+    log_out("                       (skipped when the output overwrites the input itself)\n");
     log_out("  -v                   verbose output\n");
     log_out("  -h                   show this help\n");
 }
@@ -649,11 +651,42 @@ struct RunOptions
     bool denoise_auto = false;
     bool verbose = false;
     bool no_rename = false;
+    bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件（产物与输入同路径时跳过）
 };
+
+// 工单 69/68：路径比较的公共口径（lessons §3.13）—— 先 weakly_canonical，把「输入写 A.PNG、
+// 产物写 A.png」这类写法差异归一到盘上真实大小写；再用 CompareStringOrdinal(..., TRUE) 做大小写
+// 不敏感比较（不用 towlower：其结果依赖进程 locale）。规范化失败（不存在 / 非法路径）时退回原串
+static std::wstring canonical_path_key(const path_t& p)
+{
+    std::error_code ec;
+    const std::filesystem::path c = std::filesystem::weakly_canonical(p, ec);
+    return ec ? p : c.wstring();
+}
+
+// 大小写不敏感的严格弱序（口径同上）—— 供「按路径建索引」的容器使用（工单 68 的产物撞输入检测），
+// 不必先把路径折成小写串：折大小写要么依赖 locale、要么自写规则，都是多一个真相来源
+struct OrdinalLess
+{
+    bool operator()(const std::wstring& a, const std::wstring& b) const
+    {
+        return CompareStringOrdinal(a.c_str(), (int)a.size(), b.c_str(), (int)b.size(), TRUE) == CSTR_LESS_THAN;
+    }
+};
+
+// 工单 69：两张路径是否指向**同一个文件** —— 判据是「产物原地覆盖了输入」时不得删输入
+// （删的就是刚写出的产物）
+static bool path_equal_ci(const path_t& a, const path_t& b)
+{
+    const std::wstring ka = canonical_path_key(a);
+    const std::wstring kb = canonical_path_key(b);
+    const OrdinalLess less;
+    return !less(ka, kb) && !less(kb, ka); // 等价 = 互不小于
+}
 
 // 单文件输出的命名（工单 02 命名规则）
 // SR 路径：A-(模型名)-[nN-]<倍率|尺寸>；直通缩放：A-(Resize)-<尺寸>
-// 工单 50：no_rename 时整段后缀都不加，产物 = A.<输出格式扩展名>（只作用于文件输入）
+// 工单 50：no_rename 时整段后缀都不加，产物 = A.<输出格式扩展名>（单文件与目录输入同款，工单 68）
 // file_denoise_seg 是**本文件**解析出的降噪段（AUTO 时逐文件不同），不取自 naming.denoise_seg（批量档位段）
 static path_t single_file_outpath(const std::filesystem::path& in, const NamingSegments& naming,
                                   const std::wstring& file_denoise_seg, bool direct_resize, bool no_rename)
@@ -1078,6 +1111,32 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8，工单 17）
         log_out("%s -> %s done\n", iu_to_utf8(inpath).c_str(), iu_to_utf8(outpath).c_str());
 
+        // 工单 69：删除输入文件 —— 只在**本文件产物写盘成功之后**执行（上面的 save_ok 分支不通过
+        // 就 continue 了，源图因此不会被删）；产物与输入同路径（原地覆盖，工单 58）时跳过删除，
+        // 否则删掉的就是刚写出的产物。删除失败计入 IO 失败并继续处理后续文件，源图保持原样。
+        if (opt.delete_input)
+        {
+            if (path_equal_ci(outpath, inpath))
+            {
+                if (opt.verbose)
+                    log_err("input kept (output overwrites it): %s\n", iu_to_utf8(inpath).c_str());
+            }
+            else
+            {
+                std::error_code ec;
+                std::filesystem::remove(inpath, ec);
+                if (ec)
+                {
+                    log_err("cannot delete input: %s\n", iu_to_utf8(inpath).c_str());
+                    io_failures++;
+                }
+                else if (opt.verbose)
+                {
+                    log_err("deleted input: %s\n", iu_to_utf8(inpath).c_str());
+                }
+            }
+        }
+
         advance_progress();
     }
 
@@ -1115,7 +1174,8 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     int gpuid_arg = -1000; // -1000 = auto
     int denoise_level = 0;
     int down_filter = RF_LANCZOS3; // 工单 42：降采样滤镜，默认 Lanczos
-    bool no_rename = false; // 工单 50：产物名不加后缀段（只作用于文件输入）
+    bool no_rename = false; // 工单 50/68：产物名不加后缀段（文件与目录输入都适用）
+    bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件
     bool denoise_auto = false; // AUTO：按文件伪影估计自动选档（工单 06）
     int verbose = 0;
 
@@ -1206,6 +1266,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         else if (wcscmp(a, L"--no-rename") == 0)
         {
             no_rename = true;
+        }
+        else if (wcscmp(a, L"--delete-input") == 0)
+        {
+            delete_input = true;
         }
         else if (wcscmp(a, L"-v") == 0)
         {
@@ -1406,8 +1470,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
 
         // AUTO 的档位逐文件解析：全批一致 → 目录名写该档位、内部名不变；
         // 不一致 → 目录名写 nX、每个文件各自补 -nN（工单 39）
+        // 工单 68：关闭后缀段时目录名与产物名都不带任何段，逐文件档位只决定加载哪份权重、不进产物名
+        // （与单文件 no_rename 同款），因此这一段不参与、denoise_per_file 保持 false
         std::wstring dir_denoise_seg = denoise_seg;
-        if (denoise_auto)
+        if (denoise_auto && !no_rename)
         {
             int first_level = probe_denoise_level(found.front().first.wstring(), wext);
             bool uniform = true;
@@ -1418,26 +1484,75 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
             dir_denoise_seg = denoise_per_file ? L"-nX" : (L"-n" + std::to_wstring(first_level));
         }
 
-        std::filesystem::path out_dir_path = in.parent_path() / (in.filename().wstring() + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
-        path_t output_dir = out_dir_path.wstring();
-
+        // 工单 68：关闭后缀段对目录输入同样生效（工单 50 定案 1 的「目录输入忽略该开关」已撤销）——
+        // 产物落**源文件同目录**（原文件名 + 输出格式扩展名），不再另建「-(模型名)-nN-倍率」输出目录
+        // 例外：与「删除输入文件」合用即整树原地转换/覆盖，二次运行会把产物当输入再跑一轮（票面已收录）
         std::error_code ec;
-        std::filesystem::create_directories(out_dir_path, ec);
-        if (ec)
+        if (!no_rename)
         {
-            log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(output_dir).c_str(), ec.message().c_str());
-            return EXIT_IO;
+            std::filesystem::path out_dir_path = in.parent_path() / (in.filename().wstring() + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
+            std::filesystem::create_directories(out_dir_path, ec);
+            if (ec)
+            {
+                log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(out_dir_path.wstring()).c_str(), ec.message().c_str());
+                return EXIT_IO;
+            }
+            for (auto& pair : found)
+            {
+                input_files.push_back(pair.first.wstring());
+                std::filesystem::create_directories(out_dir_path / pair.second.parent_path(), ec);
+                path_t stem = get_file_name_without_extension(pair.second.filename().wstring());
+                // 扩展名与降噪段在 run_files 逐文件拼（档位不一致时每文件不同）
+                output_files.push_back((out_dir_path / pair.second.parent_path() / stem).wstring());
+            }
         }
-
-        for (auto& pair : found)
+        else
         {
-            const std::filesystem::path& full_fs = pair.first;
-            const std::filesystem::path& rel_path = pair.second;
-            input_files.push_back(full_fs.wstring());
-            std::filesystem::create_directories(out_dir_path / rel_path.parent_path(), ec);
-            path_t stem = get_file_name_without_extension(rel_path.filename().wstring());
-            // 扩展名与降噪段在 run_files 逐文件拼（档位不一致时每文件不同）
-            output_files.push_back((out_dir_path / rel_path.parent_path() / stem).wstring());
+            for (auto& pair : found)
+            {
+                input_files.push_back(pair.first.wstring());
+                // 扩展名在 run_files 里拼；无降噪段（产物名不带任何段）
+                path_t stem = get_file_name_without_extension(pair.second.filename().wstring());
+                output_files.push_back((pair.first.parent_path() / stem).wstring());
+            }
+
+            // 工单 68（评审 P1）：产物落进输入树，撞车有两种，两种都要在跑之前拒绝：
+            //   ① 产物撞上**同批的另一个输入文件** —— 同目录 a.png + a.jpg 配 -f jpg：a.png 的产物就是 a.jpg
+            //   ② 两个产物彼此同路 —— a.png + a.jpeg 配 -f jpg（两个 stem 都是 a）、
+            //      或 a.png + a.jpg 配 -f webp（两者都产出 a.webp）
+            // 不拒的后果都是静默的：某个文件从未被处理（原内容被先写出的产物盖掉），或读到上一文件刚写出的
+            // 产物而被放大两轮；配 --delete-input 更会连源图一起消失（两张源图都被删、只剩一张产物）。
+            // 与工单 58 的「产物覆盖自己」（同一文件）不冲突：那种情况 index 相同，两条都放行。
+            // 只守 no_rename 这一路：开后缀段时产物进独立输出目录，同 stem 撞车（a.png + a.jpeg 配 -f jpg）
+            // 是**既有行为**（产物名带后缀段，工单 02/39 命名规则下同 stem 必然同路），本票不改，已记入票面遗留观察。
+            std::map<std::wstring, size_t, OrdinalLess> by_input;
+            for (size_t i = 0; i < input_files.size(); i++)
+                by_input[canonical_path_key(input_files[i])] = i;
+            std::map<std::wstring, size_t, OrdinalLess> by_product;
+            for (size_t i = 0; i < output_files.size(); i++)
+            {
+                const std::wstring key = canonical_path_key(output_files[i] + L"." + wext);
+                auto in_it = by_input.find(key);
+                auto out_it = by_product.find(key);
+                if (in_it != by_input.end() && in_it->second != i)
+                {
+                    log_err("output of %s would overwrite another input file: %s\n",
+                            iu_to_utf8(input_files[i]).c_str(), iu_to_utf8(input_files[in_it->second]).c_str());
+                    log_err("(with --no-rename the output keeps the original name, so same-name files of\n"
+                            " different extensions in one directory collide; use the suffix segment or split them)\n");
+                    return EXIT_PARAM;
+                }
+                if (out_it != by_product.end() && out_it->second != i)
+                {
+                    log_err("outputs of %s and %s are the same file: %s\n",
+                            iu_to_utf8(input_files[i]).c_str(), iu_to_utf8(input_files[out_it->second]).c_str(),
+                            iu_to_utf8(output_files[i] + L"." + wext).c_str());
+                    log_err("(with --no-rename the output keeps the original name, so two inputs whose names\n"
+                            " differ only by extension write to one output; use the suffix segment or split them)\n");
+                    return EXIT_PARAM;
+                }
+                by_product[key] = i;
+            }
         }
     }
     else
@@ -1569,6 +1684,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         o.denoise_auto = denoise_auto;
         o.verbose = verbose != 0;
         o.no_rename = no_rename;
+        o.delete_input = delete_input;
         return o;
     }();
     auto run_arch = [&](auto* engine) {

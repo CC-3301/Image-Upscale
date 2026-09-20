@@ -2,8 +2,8 @@
 import pytest
 from PIL import Image
 
-from conftest import (MODEL, make_gradient, make_jpg, make_png, make_webp, needs_engine, psnr,
-                      resolved_levels, run_engine)
+from conftest import (MODEL, auto_levels_by_file, make_gradient, make_jpg, make_png, make_webp, needs_engine,
+                      psnr, run_engine)
 
 MODEL_TAG = f"({MODEL})"
 
@@ -86,7 +86,7 @@ def test_progress_lines_on_stdout(workdir):
     assert "done" in p.stdout
 
 
-# ---- 工单 50：关闭后缀段（--no-rename，只作用于文件输入）----
+# ---- 工单 50/68：关闭后缀段（--no-rename）—— 工单 68 起对文件与文件夹输入都生效 ----
 
 @needs_engine
 def test_no_rename_file_input_uses_original_name(workdir):
@@ -217,43 +217,121 @@ def test_no_rename_same_format_uppercase_extension_overwrites_in_place(workdir):
 
 
 @needs_engine
-def test_no_rename_ignored_for_folder_input(workdir):
-    """开关只作用于文件输入：目录输入仍输出到 B-(模型名)-nN-<倍率>/ 且内部名原样镜像"""
+def test_no_rename_folder_input_writes_next_to_sources(workdir):
+    """工单 68：关后缀段对目录输入同样生效 —— 产物 = 源文件同目录 + 原文件名 + 输出格式扩展名，
+    不再另建 B-(模型名)-nN-<倍率>/ 输出目录（撤销工单 50 定案 1 的「目录模式忽略该开关」）"""
     folder = workdir / "B"
     folder.mkdir()
     make_png(folder / "p001.png")
 
-    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--no-rename"])
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--no-rename"])
     assert p.returncode == 0, p.stderr
-
-    outdir = workdir / f"B-{MODEL_TAG}-n0-2.0x"
-    assert outdir.is_dir()
-    assert (outdir / "p001.png").exists()
-    # 源目录未被写入（开关在目录模式下不生效）
-    assert sorted(x.name for x in folder.iterdir()) == ["p001.png"]
+    assert (folder / "p001.jpg").exists()
+    assert not (workdir / f"B-{MODEL_TAG}-n0-2.0x").exists()
+    # 异格式：源图仍在且字节不变
+    assert Image.open(folder / "p001.png").size == (64, 64)
+    assert sorted(x.name for x in folder.iterdir()) == ["p001.jpg", "p001.png"]
 
 
 @needs_engine
-def test_no_rename_keeps_auto_mixed_level_segments(workdir):
-    """目录 + --no-rename + AUTO 档位不一致：目录名仍写 nX，内部仍各补 -nN（工单 39 不回归）"""
+def test_no_rename_folder_input_keeps_subdirectory_layout(workdir):
+    """关后缀段 + 递归目录：子目录结构原样保留（产物落在各自原位置，不摊平到一层）"""
+    folder = workdir / "sub"
+    (folder / "inner").mkdir(parents=True)
+    make_png(folder / "a.png")
+    make_png(folder / "inner" / "b.png")
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--no-rename"])
+    assert p.returncode == 0, p.stderr
+    assert (folder / "a.jpg").exists()
+    assert (folder / "inner" / "b.jpg").exists()
+    assert not (workdir / f"sub-{MODEL_TAG}-n0-2.0x").exists()
+
+
+@needs_engine
+def test_no_rename_folder_rejects_colliding_outputs(workdir):
+    """工单 68（评审 P1）：关后缀段 + 目录里产物撞车 → 跑之前就拒绝（退出码 1），源图一个字节都不许动。
+
+    两种撞法都要拒（② 是 r2 评审补的：r1 的守卫只索引输入，盖不住产物之间撞车）：
+      ① 产物撞上**同批的另一个输入文件**：a.png + a.jpg 配 -f jpg（a.png 的产物就是 a.jpg）/ -f png；
+      ② 两个产物彼此同路：a.png + a.jpg 配 -f webp（都产出 a.webp）/ a.png + a.jpeg 配 -f jpg（两个 stem 都是 a）。
+
+    修复前的静默后果（bld 实测，NTFS 遍历顺序 a.jpg 在前）：a.jpg 先被自己的产物原地覆盖，
+    随后 a.png 的产物又把 a.jpg 盖掉 → 原 a.jpg 从未被处理就消失，退出码却是 0；
+    顺序反过来则是 a.jpg 读到 a.png 刚写出的产物 → 同一张图被放大两轮。
+    """
+    folder = workdir / "collide"
+    folder.mkdir()
+    make_png(folder / "a.png", size=(32, 32))
+    make_jpg(folder / "a.jpg", size=(32, 32))
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+
+    # ① 产物撞输入：jpg 撞 a.jpg 本身、png 撞 a.png 本身
+    for fmt in ("jpg", "png"):
+        p = run_engine(["-i", folder, "-f", fmt, "-g", "-1", "--no-rename"])
+        assert p.returncode == 1, (fmt, p.returncode, p.stderr)
+        assert "would overwrite another input file" in p.stderr, p.stderr
+        assert {q.name: q.read_bytes() for q in folder.iterdir()} == before, fmt
+
+    # ② 两个产物彼此同路：png 与 jpg 都产出 a.webp（目录里本来没有 a.webp，① 的判据盖不住这一维）
+    p = run_engine(["-i", folder, "-f", "webp", "-g", "-1", "--no-rename"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "are the same file" in p.stderr, p.stderr
+    assert {q.name: q.read_bytes() for q in folder.iterdir()} == before
+
+    # ② 的另一形态：同 stem 不同扩展名（a.png + a.jpeg）配 -f jpg
+    jpeg_dir = workdir / "collide-jpeg"
+    jpeg_dir.mkdir()
+    make_png(jpeg_dir / "a.png", size=(32, 32))
+    make_jpg(jpeg_dir / "a.jpeg", size=(32, 32))
+    before_jpeg = {p.name: p.read_bytes() for p in jpeg_dir.iterdir()}
+    p = run_engine(["-i", jpeg_dir, "-f", "jpg", "-g", "-1", "--no-rename"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "are the same file" in p.stderr, p.stderr
+    assert {q.name: q.read_bytes() for q in jpeg_dir.iterdir()} == before_jpeg
+
+
+@needs_engine
+def test_no_rename_folder_auto_picks_each_files_own_variant(workdir):
+    """目录 + 关后缀段 + AUTO 档位不一致：产物名不带任何段，但每个文件仍按**自己**解析出的档位
+    选权重（工单 39 的逐文件档位在关后缀段路径下不得失效）。
+
+    名字上已看不出档位，所以只能比内容：原地产物 vs「同图 + 显式该档位的单文件参考产物」的 PSNR。
+    """
     folder = workdir / "mixed"
     folder.mkdir()
-    make_gradient(folder / "a.png")  # 干净 → 0 档
+    clean = folder / "a.png"
+    make_gradient(clean)  # 干净 → 0 档
     dirty = folder / "b.jpg"
     make_gradient(dirty)
     Image.open(dirty).save(dirty, quality=10)  # 重压缩伪影 → 非 0 档
+    originals = {p.name: p.read_bytes() for p in folder.iterdir()}  # a.png 会被产物原地覆盖，先存原图
 
     p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto",
                     "-f", "png", "-g", "-1", "-v", "--no-rename"])
     assert p.returncode == 0, p.stderr
-    levels = resolved_levels(p.stderr)
+    levels = auto_levels_by_file(p.stderr)
     # 顺序守卫：夹具必须保持档位不一致，否则本用例会空转通过
-    assert len(levels) == 2 and levels[0] != levels[1], levels
+    assert set(levels) == {str(clean), str(dirty)}, levels
+    assert len(set(levels.values())) == 2, levels
 
-    outdir = workdir / "mixed-(waifu2x_cunet)-nX-2.0x"
-    assert outdir.is_dir()
-    expected = [f"{stem}-n{level}.png" for stem, level in zip(("a", "b"), levels)]
-    assert sorted(x.name for x in outdir.iterdir()) == sorted(expected)
+    assert not (workdir / "mixed-(waifu2x_cunet)-nX-2.0x").exists()
+    assert sorted(x.name for x in folder.iterdir()) == ["a.png", "b.jpg", "b.png"]
+
+    # 参考产物：**两张图各跑一次**「同图 + 显式自己那档、默认命名（-n<N> 段可见）」→ 与原地产物比内容。
+    # 只比干净那张会漏掉「逐文件档位退化成恒 0」这类回归（脏图产物就没人管了），故逐张比。
+    tokens = {0: "none", 1: "low", 2: "mid", 3: "high"}
+    for src_name, product_name in (("a.png", "a.png"), ("b.jpg", "b.png")):
+        level = levels[str(folder / src_name)]
+        refdir = workdir / f"ref-{src_name}"
+        refdir.mkdir()
+        ref = refdir / src_name
+        ref.write_bytes(originals[src_name])
+        pr = run_engine(["-i", ref, "-m", "waifu2x_cunet", "--denoise", tokens[level], "-f", "png", "-g", "-1"])
+        assert pr.returncode == 0, pr.stderr
+        refprod = refdir / f"{ref.stem}-(waifu2x_cunet)-n{level}-2.0x.png"
+        assert refprod.exists(), sorted(x.name for x in refdir.iterdir())
+        assert psnr(Image.open(folder / product_name), Image.open(refprod)) >= 40.0, (src_name, level)
 
 
 @needs_engine

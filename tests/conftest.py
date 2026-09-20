@@ -131,10 +131,32 @@ def make_gradient(path, size=(200, 140)):
     return img
 
 
+# AUTO 逐文件档位在 verbose stderr 上的标记（解析口径只写一份，供下面两个视图共用）
+_AUTO_LEVEL_MARK = "auto resolved level="
+
+
 def resolved_levels(stderr):
-    """从引擎 stderr 取 AUTO 逐文件解析出的降噪档位（按处理顺序）"""
-    return [int(l.split("auto resolved level=")[1])
-            for l in stderr.splitlines() if "auto resolved level=" in l]
+    """从引擎 stderr 取 AUTO 逐文件解析出的降噪档位（**按处理顺序**的一串）"""
+    return [int(l.split(_AUTO_LEVEL_MARK)[1])
+            for l in stderr.splitlines() if _AUTO_LEVEL_MARK in l]
+
+
+def auto_levels_by_file(stderr):
+    """同上，但按**文件路径**索引（不依赖处理顺序：目录遍历顺序不是排序的）。
+
+    verbose 下每个文件先打 "loaded <path> (WxH)"、紧跟着才打 "auto resolved level=N"，
+    所以按这个先后配对就能把档位归到具体文件；目录批量用例要断言「某文件用的是自己解析出的档位」
+    时用这个视图，不能靠 `resolved_levels` 的下标。
+    """
+    out = {}
+    cur = None
+    for line in stderr.splitlines():
+        if line.startswith("loaded "):
+            cur = line[len("loaded "):].rsplit(" (", 1)[0]
+        elif _AUTO_LEVEL_MARK in line and cur:
+            out[cur] = int(line.split(_AUTO_LEVEL_MARK)[1])
+            cur = None
+    return out
 
 
 @pytest.fixture
