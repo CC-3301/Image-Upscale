@@ -268,8 +268,7 @@ def test_no_rename_cyrillic_case_variant_overwrites_in_place(workdir):
     folder, on_disk, ref, p1, before = _run_in_place(workdir, "А.PNG")  # 西里尔大写 А + 大写扩展名
 
     assert p1.returncode == 0, (p1.returncode, p1.stderr)
-    first = _assert_in_place_product(on_disk, ref, size=(64, 64))
-    first = first.copy()  # 先脱离文件句柄：下一轮要原地重写同一路径
+    _assert_in_place_product(on_disk, ref, size=(64, 64))
 
     # 两种拼写（大写 / 小写西里尔，小写扩展名）都在 NTFS 上解析到同一个文件
     p2 = run_engine(["-i", folder / "а.png", "-f", "png", "-g", "-1", "--no-rename"])
