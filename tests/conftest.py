@@ -93,10 +93,22 @@ def make_png(path, size=(64, 64), mode="RGB"):
     return img
 
 
-def make_gray_jpg(path, size=(64, 64)):
+def make_jpg(path, size=(64, 64)):
+    """真 JPEG 夹具（灰度内容），只供结构型断言：退出码 / 尺寸 / 格式
+
+    命名按格式统一（make_png / make_jpg / make_webp）；灰度来自最初的用途（test_sr 的灰度输入
+    用例），test_naming 则拿它当「非 PNG 的真 JPEG」。内容质量判据用 make_png / make_gradient。
+    """
     make_png(path.with_suffix(".tmp.png"), size, "L")
     Image.open(path.with_suffix(".tmp.png")).convert("L").save(path, quality=90)
     path.with_suffix(".tmp.png").unlink()
+
+
+def make_webp(path, size=(64, 64), lossless=False):
+    """真 WEBP 夹具：Pillow 按 `.webp` 后缀直接编码，不需要 .tmp.png 中转"""
+    img = make_png(path, size)
+    img.save(path, format="WEBP", lossless=lossless)
+    return img
 
 
 def make_gradient(path, size=(200, 140)):

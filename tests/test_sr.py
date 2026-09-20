@@ -4,7 +4,7 @@ import os
 import pytest
 from PIL import Image
 
-from conftest import MODELS_DIR, REPO, make_gray_jpg, make_png, needs_engine, psnr, run_engine, MODEL
+from conftest import MODELS_DIR, REPO, make_jpg, make_png, make_webp, needs_engine, psnr, run_engine, MODEL
 
 BASELINE = REPO / "tests" / ".baseline"
 
@@ -37,7 +37,7 @@ def test_cpu_2x_dimensions_and_psrn(workdir):
 @needs_engine
 def test_grayscale_jpg_input(workdir):
     inp = workdir / "gray.jpg"
-    make_gray_jpg(inp)
+    make_jpg(inp)
     p = run_engine(["-i", inp, "-g", "-1"])
     assert p.returncode == 0, p.stderr
     out = workdir / f"gray-({MODEL})-n0-2.0x.jpg"
@@ -50,9 +50,7 @@ def test_grayscale_jpg_input(workdir):
 @needs_engine
 def test_webp_input_decode(workdir):
     inp = workdir / "pic.webp"
-    make_png(inp.with_suffix(".tmp.png"))
-    Image.open(inp.with_suffix(".tmp.png")).save(inp, format="WEBP", lossless=True)
-    inp.with_suffix(".tmp.png").unlink()
+    make_webp(inp, lossless=True)
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
