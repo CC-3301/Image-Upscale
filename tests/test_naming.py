@@ -22,7 +22,7 @@ def test_single_file_default_jpg_naming(workdir):
 @needs_engine
 def test_single_file_explicit_png_format(workdir):
     inp = workdir / "A.webp"
-    make_webp(inp)  # 真 webp 输入（Pillow 按后缀编码）
+    make_webp(inp)  # 真 webp 输入（显式 format="WEBP" 编码）
 
     p = run_engine(["-i", inp, "-f", "png", "-g", "-1"])
     assert p.returncode == 0, p.stderr
@@ -177,6 +177,19 @@ def _run_in_place(workdir, name, size=(32, 32), args=()):
     return folder, inp, ref, p, before
 
 
+def _assert_in_place_product(inp, ref, size):
+    """原地覆盖的共同判据：产物 = 真 PNG + 目标尺寸 + 内容确是本次处理结果（与参考产物比 PSNR）
+
+    只承载四条用例共有的四项断言（打开 / format / size / PSNR）；跑几轮、扩展名拼写、
+    非 ASCII、--width 各例自持。返回打开的图像，供还要继续用它的用例取值。
+    """
+    img = Image.open(inp)
+    assert img.format == "PNG"
+    assert img.size == size
+    assert psnr(img, Image.open(ref)) >= 40.0
+    return img
+
+
 @needs_engine
 def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
     """关后缀段 + 输出格式与输入相同（工单 58）：目标路径即输入路径 → 原地覆盖源文件
@@ -190,10 +203,7 @@ def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
     assert " done" in p.stdout, p.stdout
     # 目录内不新增文件：产物就是源文件本身
     assert sorted(x.name for x in folder.iterdir()) == ["A.png"]
-    img = Image.open(inp)
-    assert img.format == "PNG"
-    assert img.size == (64, 64)
-    assert psnr(img, Image.open(ref)) >= 40.0
+    _assert_in_place_product(inp, ref, size=(64, 64))
 
 
 @needs_engine
@@ -204,10 +214,7 @@ def test_no_rename_same_format_uppercase_extension_overwrites_in_place(workdir):
     assert p.returncode == 0, (p.returncode, p.stderr)
     # 覆盖写盘不会改动盘上已有的文件名拼写
     assert sorted(x.name for x in folder.iterdir()) == ["A.PNG"]
-    img = Image.open(inp)
-    assert img.format == "PNG"
-    assert img.size == (64, 64)
-    assert psnr(img, Image.open(ref)) >= 40.0  # 实测 99.0
+    _assert_in_place_product(inp, ref, size=(64, 64))  # PSNR 实测 99.0
 
 
 @needs_engine
@@ -261,16 +268,14 @@ def test_no_rename_cyrillic_case_variant_overwrites_in_place(workdir):
     folder, on_disk, ref, p1, before = _run_in_place(workdir, "А.PNG")  # 西里尔大写 А + 大写扩展名
 
     assert p1.returncode == 0, (p1.returncode, p1.stderr)
-    first = Image.open(on_disk)
-    assert first.format == "PNG"
-    assert first.size == (64, 64)
-    assert psnr(first, Image.open(ref)) >= 40.0
+    first = _assert_in_place_product(on_disk, ref, size=(64, 64))
     first = first.copy()  # 先脱离文件句柄：下一轮要原地重写同一路径
 
     # 两种拼写（大写 / 小写西里尔，小写扩展名）都在 NTFS 上解析到同一个文件
     p2 = run_engine(["-i", folder / "а.png", "-f", "png", "-g", "-1", "--no-rename"])
     assert p2.returncode == 0, (p2.returncode, p2.stderr)
     assert on_disk.read_bytes() != before
+    # 第二轮产物是 128×128，参考产物只对应第一轮的 64×64，无可比的 PSNR → 这里只断言格式与尺寸
     second = Image.open(on_disk)
     assert second.format == "PNG"
     assert second.size == (128, 128)
@@ -290,7 +295,4 @@ def test_no_rename_direct_resize_same_format_overwrites_in_place(workdir):
     assert p.returncode == 0, (p.returncode, p.stderr)
     # 没有 -(Resize)-32x 段的新产物：目录内只有源文件本身
     assert sorted(x.name for x in folder.iterdir()) == ["A.png"]
-    img = Image.open(inp)
-    assert img.format == "PNG"
-    assert img.size == (32, 32)
-    assert psnr(img, Image.open(ref)) >= 40.0
+    _assert_in_place_product(inp, ref, size=(32, 32))

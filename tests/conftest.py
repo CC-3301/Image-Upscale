@@ -92,7 +92,7 @@ def _checker_img(size=(64, 64), mode="RGB"):
 
 
 def make_png(path, size=(64, 64), mode="RGB"):
-    """生成确定性测试图：棋盘 + 渐变（Pillow 按 `.png` 后缀编码）"""
+    """生成确定性测试图：棋盘 + 渐变（不传 format，Pillow 按 `.png` 后缀推断编码）"""
     img = _checker_img(size, mode)
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
@@ -112,7 +112,7 @@ def make_jpg(path, size=(64, 64)):
 
 
 def make_webp(path, size=(64, 64), lossless=False):
-    """真 WEBP 夹具（Pillow 按 `.webp` 后缀编码；`lossless` 供不希望引入压缩伪影的用例）"""
+    """真 WEBP 夹具（显式 `format="WEBP"`，与后缀无关；`lossless` 供不希望引入压缩伪影的用例）"""
     img = _checker_img(size)
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, format="WEBP", lossless=lossless)
