@@ -6,7 +6,7 @@
 
 **Blocked by:** 08
 
-**Status:** done（代码完成；验收清单见下方 Comments）
+**Status:** done（代码完成；验收清单按维护者 2026-09-20 定案默认通过，见 Comments）
 
 - [ ] zip 解压后无需安装任何运行时即可运行 GUI 与 CLI
 - [ ] 全部打包模型随包分发，models 目录结构支持放入自定义 ncnn 模型即被识别
@@ -25,3 +25,10 @@
 - zip 内布局：ImageUpscaleGui.exe / image-upscale.exe / models/(7 组+manifest) / LICENSE / NOTICE.md / README.md
 Status: done（自动化冒烟通过；GUI 视觉验收待人工）
 - 2026-09-19 补记（v0.2.6）：README 已补「模型许可出处表」与「导入自己的模型」说明（manifest 字段规则 + 各架构权重文件命名）；NOTICE.md 那句悬空引用改为指向该表。工单两处验收齐备。
+
+### 人工验收（2026-09-20 维护者定案：默认通过）
+
+- **未逐条执行的项**：本票 Comments 的人工验收清单全部条目（含干净 Windows 环境冒烟）。
+- **口径**：维护者无空操作逐条跑，按 `AGENTS.md`「人工验收默认通过（固定流程）」视为通过并结清；AC 复选框保持未勾，如实反映「没人跑过」。
+- **重开方式**：日后维护者提及其中任一项 → 重开本票或另开新票。
+- 参考：`docs/lessons.md` §3.16。
