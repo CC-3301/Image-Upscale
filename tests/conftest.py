@@ -74,8 +74,8 @@ def run_engine(args, cwd=None):
     return p
 
 
-def make_png(path, size=(64, 64), mode="RGB"):
-    """生成确定性测试图：棋盘 + 渐变"""
+def _checker_img(size=(64, 64), mode="RGB"):
+    """确定性测试图内容：棋盘 + 渐变（各夹具 helper 共用图案，编码格式由调用者决定）"""
     w, h = size
     img = Image.new(mode, (w, h))
     px = img.load()
@@ -88,6 +88,12 @@ def make_png(path, size=(64, 64), mode="RGB"):
                 px[x, y] = v[0]
             elif mode == "RGBA":
                 px[x, y] = v + (255 if x < w // 2 else 128)
+    return img
+
+
+def make_png(path, size=(64, 64), mode="RGB"):
+    """生成确定性测试图：棋盘 + 渐变（Pillow 按 `.png` 后缀编码）"""
+    img = _checker_img(size, mode)
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
     return img
@@ -99,14 +105,16 @@ def make_jpg(path, size=(64, 64)):
     命名按格式统一（make_png / make_jpg / make_webp）；灰度来自最初的用途（test_sr 的灰度输入
     用例），test_naming 则拿它当「非 PNG 的真 JPEG」。内容质量判据用 make_png / make_gradient。
     """
-    make_png(path.with_suffix(".tmp.png"), size, "L")
-    Image.open(path.with_suffix(".tmp.png")).convert("L").save(path, quality=90)
-    path.with_suffix(".tmp.png").unlink()
+    img = _checker_img(size, "L")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(path, quality=90)
+    return img
 
 
 def make_webp(path, size=(64, 64), lossless=False):
-    """真 WEBP 夹具：Pillow 按 `.webp` 后缀直接编码，不需要 .tmp.png 中转"""
-    img = make_png(path, size)
+    """真 WEBP 夹具（Pillow 按 `.webp` 后缀编码；`lossless` 供不希望引入压缩伪影的用例）"""
+    img = _checker_img(size)
+    path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path, format="WEBP", lossless=lossless)
     return img
 
