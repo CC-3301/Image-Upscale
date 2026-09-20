@@ -92,7 +92,7 @@ def _checker_img(size=(64, 64), mode="RGB"):
 
 
 def make_png(path, size=(64, 64), mode="RGB"):
-    """生成确定性测试图：棋盘 + 渐变（不传 format，Pillow 按 `.png` 后缀推断编码）"""
+    """生成确定性测试图：棋盘 + 渐变（不传 format，编码按传入路径的后缀推断 → 传 `.gif` 即真 GIF）"""
     img = _checker_img(size, mode)
     path.parent.mkdir(parents=True, exist_ok=True)
     img.save(path)
