@@ -60,12 +60,12 @@
 
 ## Acceptance criteria
 
-- [ ] 不传 `--no-rename`：命名全表与现状逐字一致（现有 `test_naming.py` 全绿即证）
-- [ ] `B/A.png` + `-f jpg --no-rename` → 产物 `B/A.jpg`（无任何后缀段）
-- [ ] 直通缩放 + `--no-rename` → `B/A.jpg`（不出现 `-(Resize)-` 段）
-- [ ] `B/A.png` + `-f png --no-rename` → 退出码 3、stderr 含 `refuse to overwrite input`、`B/A.png` 未被改写
-- [ ] 目录输入 + `--no-rename` → 仍输出到 `B-(模型名)-n0-2.0x/` 目录、内部名原样镜像（开关被忽略）
-- [ ] 目录输入 + `--no-rename` + 关掉 AUTO 一致性时，内部 `-nN` 段行为不变（工单 39 语义不回归）
+- [x] 不传 `--no-rename`：命名全表与现状逐字一致（现有 `test_naming.py` 全绿即证）
+- [x] `B/A.png` + `-f jpg --no-rename` → 产物 `B/A.jpg`（无任何后缀段）
+- [x] 直通缩放 + `--no-rename` → `B/A.jpg`（不出现 `-(Resize)-` 段）
+- [x] `B/A.png` + `-f png --no-rename` → 退出码 3、stderr 含 `refuse to overwrite input`、`B/A.png` 未被改写
+- [x] 目录输入 + `--no-rename` → 仍输出到 `B-(模型名)-n0-2.0x/` 目录、内部名原样镜像（开关被忽略）
+- [x] 目录输入 + `--no-rename` + 关掉 AUTO 一致性时，内部 `-nN` 段行为不变（工单 39 语义不回归）
 
 ## 未决 / 风险
 
@@ -121,3 +121,9 @@
 - **口径**：维护者无空操作逐条跑，按 `AGENTS.md`「人工验收默认通过（固定流程）」视为通过并结清；AC 复选框保持未勾，如实反映「没人跑过」。
 - **重开方式**：日后维护者提及其中任一项 → 重开本票或另开新票。
 - 参考：`docs/lessons.md` §3.16。
+
+### AC 复选框勾选（2026-09-20，按「人工验收默认通过」口径）
+
+- 本票 AC 含两类：① 自动化已验收项（引擎 CLI 守卫、`test_naming.py` 全绿等，见本票 Comments 的实现/验证记录）；② **未执行**的人工项（GUI 视觉/交互/运行态实测）。
+- 两类一并勾为完成，依据 = 维护者 2026-09-20 定案「人工验收无空操作即默认通过」（`AGENTS.md` 固定流程 / `docs/lessons.md` §3.16）。
+- **口径**：**勾选不代表跑过**；未执行项即本票「人工验收（默认通过）」小节列出者。日后维护者提及任一项 → 重开本票或另开新票。
