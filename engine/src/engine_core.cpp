@@ -1544,7 +1544,9 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     // （原先 23 个位置实参逐字重复三遍，相邻同类型参数传错顺序编译器不报错）
     // 工单 65：一律具名赋值（IIFE 取返回值以保留 const）——C++17 无指定初始化器，花括号实参表
     // 在换序/中途插字段时相邻同类型字段会静默错位且编译器不报错；具名赋值下换序天然安全，
-    // 漏填由上面各字段的「未设置」类内初值兜底
+    // 漏填由类内初值兜底：format 空串 / quality=-1 / run_scale=0 / target_value=0 是各自合法域
+    // 以外的「未设置」哨兵，而 tilesize=0 与 down_filter=RF_LANCZOS3 本就是 CLI 的「自动」
+    // 与默认 Lanczos（漏填即静默取该默认值，不是哨兵）
     const NamingSegments naming = [&] {
         NamingSegments n;
         n.ext = wext;
