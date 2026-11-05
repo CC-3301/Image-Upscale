@@ -25,7 +25,7 @@
 - 引擎 `engine/src/engine_core.cpp`：`--no-rename` 的目录分支改为 `output_files[i] = 源文件同目录 + stem`（不再 `create_directories` 输出目录）；`--no-rename` + AUTO 时逐文件档位只决定加载哪份权重、不进产物名（`denoise_per_file` 恒为 false，`dir_denoise_seg` 不参与）。
 - GUI `gui/MainWindow.xaml.cs`：删掉灰置跟随（`UpdateAddSuffixState`、`_suppressAddSuffixWrite`、输入框 `TextChanged` 挂接，以及由此只剩一个消费者的 `IsFileInput`）；发参条件从 `IsFileInput(input) && !_addSuffixEnabled` 变成 `!_addSuffixEnabled`。
 - `SettingsStore`：`AddSuffixLabels` / `AddSuffixEnabledFromIndex` / `AddSuffixIndexFrom` 提升为两开关共用的 `SwitchLabels` / `SwitchEnabledFromIndex(idx, fallback)` / `SwitchIndexFrom`（「开/关」字面量在仓库里只剩一处）。
-- 文档：`CONTEXT.md` 术语改名并写明文件夹语义；`README.md`、`spec.md`（命名规则表 + 关闭后缀段段 + GUI 段）同步。
+- 文档：`GLOSSARY.md` 术语改名并写明文件夹语义；`README.md`、`spec.md`（命名规则表 + 关闭后缀段段 + GUI 段）同步。
 
 ## Acceptance criteria
 
@@ -42,7 +42,7 @@
 
 ## 未决 / 风险
 
-- **二次运行会把产物当输入**：文件夹 + 关时产物落进输入树，同扩展名产物会覆盖源图（工单 58 的原地覆盖语义）、异扩展名产物会在下一轮被当成输入。维护者已定案接受（`spec.md` / `CONTEXT.md` / `README.md` 均写明）。
+- **二次运行会把产物当输入**：文件夹 + 关时产物落进输入树，同扩展名产物会覆盖源图（工单 58 的原地覆盖语义）、异扩展名产物会在下一轮被当成输入。维护者已定案接受（`spec.md` / `GLOSSARY.md` / `README.md` 均写明）。
 - **同批撞车已改为拒绝**（评审 P1）：同目录 `a.png` + `a.jpg` + `-f jpg` 时跑之前报错拒绝（退出码 1）；细节见 Comments。
 - `--no-rename` 对文件夹生效后，工单 39 的 `nX` 目录 + 内部 `-nN` 命名在关后缀段路径下不再存在；该命名只在「开」路径继续由既有用例守护。
 
@@ -64,7 +64,7 @@
 - **[P2] 测试侧（已修）**：`tests/test_naming.py` 的段标题「只作用于文件输入」已失真 → 改为「工单 50/68」；
   本地 `_auto_levels_by_file` 与 `conftest.resolved_levels` 重复同一解析形状 → 上提到 `conftest.auto_levels_by_file`，
   两函数共用 `_AUTO_LEVEL_MARK` 一份标记常量（docstring 也重写）。
-- **[P2] 文档缺口（已修）**：`spec.md` / `CONTEXT.md` / `README.md` 补上「同批撞车拒绝」与「同名不同扩展名会互相覆盖产物」。
+- **[P2] 文档缺口（已修）**：`spec.md` / `GLOSSARY.md` / `README.md` 补上「同批撞车拒绝」与「同名不同扩展名会互相覆盖产物」。
 - **[P2] 票面自相矛盾（已修）**：本票「定案」原写「内部标识符也不改」与「方案要点」的 `Switch*` 统一矛盾 → 定案已按实际实施重写，并记录它取代工单 66 的 AC1 范围。
 - **[P2] 待维护者批准（未改）**：`docs/lessons.md` §2.4 有三处引用因本票过时（删掉的 `_suppressAddSuffixWrite` 当范例、`AddSuffixLabels` 改名、持久化清单缺 `LastDeleteInput` 与旧界面名）——
   按 `AGENTS.md`「记忆维护规则」需先提案，已随发布确认一并提请。
@@ -87,6 +87,6 @@
 
 ### 实施（2026-09-20）
 
-- 交付：`engine/src/engine_core.cpp`（目录分支）、`gui/MainWindow.xaml{,.cs}`、`SettingsStore`、`CONTEXT.md`、`README.md`、`spec.md`、`tests/test_naming.py`（两条旧用例改写为文件夹生效的三条新用例）。
+- 交付：`engine/src/engine_core.cpp`（目录分支）、`gui/MainWindow.xaml{,.cs}`、`SettingsStore`、`GLOSSARY.md`、`README.md`、`spec.md`、`tests/test_naming.py`（两条旧用例改写为文件夹生效的三条新用例）。
 - 测试证据：改名/落点/子目录/AUTO 逐文件档位四条用例全绿；AUTO 用例的名字断言换成「与原地产物比 PSNR」，因为关后缀段后名字里已看不出档位。
 - 人工验收（默认通过）：文件夹开关的实际点击效果只有维护者能跑；未逐条执行，日后提及即可重开。

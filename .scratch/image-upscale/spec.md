@@ -2,7 +2,7 @@ Status: ready-for-agent
 
 # Image-Upscale —— 图像超分工具
 
-> 术语遵循根目录 `CONTEXT.md`；推理栈决策见 `docs/adr/0001-ncnn-vulkan-inference-engine.md`。
+> 术语遵循根目录 `GLOSSARY.md`；推理栈决策见 `docs/adr/0001-ncnn-vulkan-inference-engine.md`。
 > 行为参照物：waifu2x-caffe（已停更，RTX 50 系无法运行）。
 
 ## Problem Statement

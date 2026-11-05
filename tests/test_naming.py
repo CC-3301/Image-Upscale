@@ -110,7 +110,7 @@ def test_no_rename_file_input_uses_original_name(workdir):
 def test_no_rename_jpeg_extension_sibling_is_not_same_path(workdir):
     """`.jpeg` + `-f jpg`：扩展名代理（jpeg↔jpg）不是同一个文件 → 不命中原地覆盖
 
-    守护文档承诺的边界（spec.md 命名规则段/冲突策略段、README、CONTEXT）：产物 = stem + "." + 输出
+    守护文档承诺的边界（spec.md 命名规则段/冲突策略段、README、GLOSSARY）：产物 = stem + "." + 输出
     扩展名 = `A.jpg` ≠ 输入 `A.jpeg` → 新增 `A.jpg`、源图字节不变（误判为同一文件会覆盖源图，不可撤销）。
     """
     folder = workdir / "B"

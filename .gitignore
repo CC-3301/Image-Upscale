@@ -16,11 +16,8 @@ __pycache__/
 *.log
 .tmp-*
 
-# pi 内部目标文件
-.pi/
-
-# implement-pro 批次状态与门禁产物（本机路径，不入库）
-.implement-pro/
+# CodeGraph 索引（本机生成，不入库）
+.codegraph/
 
 # asan 构建目录
 bld-asan/

@@ -19,7 +19,7 @@
 1. **`README.md:84` 语义复查**：工单 51 已写入「关：控制文件输入的产物名是否带后缀段」的描述，
    但本票未落地时该描述是提前的。本票落地后必须逐字复查该句与实际行为（含「文件夹输入不生效，
    下拉固定为开并灰置」后半句）一致。
-2. **`CONTEXT.md` 术语**：新增术语「文件添加扩展名」（= 是否给产物名加 `-(模型名)-nN-<倍率|尺寸>` 段），
+2. **`GLOSSARY.md` 术语**：新增术语「文件添加扩展名」（= 是否给产物名加 `-(模型名)-nN-<倍率|尺寸>` 段），
    并明确与「文件格式扩展名」（`.jpg/.png`）不同义；保持最小增补，不重写现有词条。
 3. **`docs/lessons.md` 不改**：§2.4 持久化清单的补漏（含 `LastAddSuffix`）归工单 49，本票不动。
 
@@ -56,7 +56,7 @@
 - `tests/test_naming.py`：新增 6 条守卫（含直通缩放、目录忽略、拒写自毁）。
 - `tests/conftest.py` + `tests/test_auto.py`：`make_gradient` / `resolved_levels` 助手搬到 conftest 共用
   （**评审后补进清单** —— 原清单未列这两个文件，spec 轴 r3 报为「越界，report-only」；行为等价、无功能影响）。
-- `.scratch/image-upscale/spec.md`（命名规则段、GUI 段、冲突策略段）、`README.md`、`CONTEXT.md`（新术语词条）。
+- `.scratch/image-upscale/spec.md`（命名规则段、GUI 段、冲突策略段）、`README.md`、`GLOSSARY.md`（新术语词条）。
 
 ## Acceptance criteria
 
@@ -82,7 +82,7 @@
 
 - **改了什么**：引擎 `--no-rename`（**仅单文件输入生效**，目录批处理忽略）+ 「产物与输入同路径」拒写守卫
   （不推理、不写盘 → `io_failures` → **退出码 3**）+ GUI 发参与中文日志映射 + `tests/test_naming.py`
-  6 条 CLI 守卫；spec / README / CONTEXT 同步（含 #51 转交的三项）。
+  6 条 CLI 守卫；spec / README / GLOSSARY 同步（含 #51 转交的三项）。
 - **两轴轨迹**：r1 两轴 approved（spec 2 + standards 5 条 P2）→ fix r2 → **r2 两轴 needs-fixes**
   → fix r3 → **r3 两轴 approved**（剩 4 条 P2 全 report-only）。
 - **r1 关键裁决**：两轴在 `is_same_path_ci` 的 `towlower` 上给出相反风险 → 采纳 standards 的修法

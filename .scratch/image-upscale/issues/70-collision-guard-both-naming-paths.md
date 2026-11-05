@@ -43,7 +43,7 @@
 
 ### 实施（2026-09-20）
 
-- 交付：`engine/src/engine_core.cpp`（守卫提位 + 运行期守卫 + 目录创建挪后）、两个测试文件、`spec.md` / `README.md` / `CONTEXT.md`。
+- 交付：`engine/src/engine_core.cpp`（守卫提位 + 运行期守卫 + 目录创建挪后）、两个测试文件、`spec.md` / `README.md` / `GLOSSARY.md`。
 - **红→绿（探针）**：把跑前守卫与运行期守卫**都**关掉重建 → 两个撞车用例都变红（`assert 0 == 1`，即静默覆盖、退出码 0）；只关跑前守卫 → 用例仍是红的，但退出码变成 3、stderr 是 `output path already written by another input` → 证明运行期守卫确实独立生效（双保险）。恢复后 121 passed（含 r2 补的 alpha 用例）。
 - 人工验收（默认通过）：GUI 上手动摆一个「同 stem 不同扩展名」的文件夹跑一轮（未逐条执行，日后提及即可重开）。
 

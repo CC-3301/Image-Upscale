@@ -38,7 +38,7 @@
 
 ## 未决 / 风险
 
-- 「与输入格式相同」+ **单文件** + 关后缀段：`A.jpeg` 的产物就是 `A.jpeg` 本身（保留拼写）→ 命中原地覆盖（源图被替换）；这与 `-f jpg` 下的 `A.jpeg` → 新增 `A.jpg` 不同，属该选项的预期语义，已写进 `CONTEXT.md` / `README.md` / `spec.md`。
+- 「与输入格式相同」+ **单文件** + 关后缀段：`A.jpeg` 的产物就是 `A.jpeg` 本身（保留拼写）→ 命中原地覆盖（源图被替换）；这与 `-f jpg` 下的 `A.jpeg` → 新增 `A.jpg` 不同，属该选项的预期语义，已写进 `GLOSSARY.md` / `README.md` / `spec.md`。
 - 产物扩展名保留输入拼写意味着 `.PNG` 这类大写后缀会原样出现在产物名里；不做小写归一（字面口径，维护者选定）。
 - 输出格式下拉宽度 90 → 118px：已核过「降噪与输出」栏行宽仍在可用宽内（见 Comments 的实测）。
 
@@ -67,7 +67,7 @@
 
 ### 实施（2026-09-20）
 
-- 交付：`engine/src/engine_core.cpp`、`gui/MainWindow.xaml{,.cs}`（含 `SettingsStore`）、`tests/test_format_same.py`（新增 9 例）、`README.md` / `spec.md` / `CONTEXT.md`（新术语「输出格式」）。
+- 交付：`engine/src/engine_core.cpp`、`gui/MainWindow.xaml{,.cs}`（含 `SettingsStore`）、`tests/test_format_same.py`（新增 9 例）、`README.md` / `spec.md` / `GLOSSARY.md`（新术语「输出格式」）。
 - 布局：输出格式下拉 90 → 118px（7 个中文字 = 84px + 控件开销 28px）；「降噪与输出」栏行宽实测 560px ≤ 可用宽 720px（口径同工单 67 注释），不换行、不裁剪。
 - 人工验收（默认通过）：下拉第 4 项的实际观感与点击只有维护者能跑；未逐条执行，日后提及即可重开。
 
@@ -75,6 +75,6 @@
 
 - **[P2] `-f bad -f same` 末次生效不彻底（已收）**：same 分支只置 `format_same` 未归位 `format` → 校验拿前一个非法值报 EXIT_PARAM，与「末次生效」注释矛盾（`-f bad -f jpg` 反而通过）。修法：same 分支里 `format = PATHSTR("jpg")`。
 - **[P2] 注释残留半行（已收）**：r2 改错字时把 `// 按 IO 失败计` 留在行中段 → 合并成一行。
-- **[P2] 文档缺一句（已收）**：本票「未决」声称 `-f same` + 关后缀段的原地覆盖已写进文档，实测三处都没有 → `CONTEXT.md` 的「输出格式」术语补一句、`spec.md` 的关闭后缀段段补一句。
+- **[P2] 文档缺一句（已收）**：本票「未决」声称 `-f same` + 关后缀段的原地覆盖已写进文档，实测三处都没有 → `GLOSSARY.md` 的「输出格式」术语补一句、`spec.md` 的关闭后缀段段补一句。
 - **[P2] 票面计数过时（已收）**：AC 里的 120 passed → 121、实施注释「新增 8 例」→ 9 例。
 - **收敛线说明**：r3 已是本批次第 3 轮（上限），以上 4 条属 report-only 级，按「小问题当轮收」一次改完，**不再开第 4 轮**。

@@ -35,7 +35,7 @@
 - 测试（`tests/test_naming.py`）：把三条「拒绝写盘」用例改成「原地覆盖」用例——
   `A.png` + `-f png --no-rename` → 退出码 **0**、`A.png` 路径不变、内容/尺寸为超分结果（夹具 32×32 → 64×64）、
   目录内**不新增**文件；含非 ASCII 文件名一例（原西里尔用例改写）。
-- 文档：`spec.md:78`（命名规则段）、`spec.md:82`（冲突策略段）、`README.md:84`、`CONTEXT.md:48`
+- 文档：`spec.md:78`（命名规则段）、`spec.md:82`（冲突策略段）、`README.md:84`、`GLOSSARY.md:48`
   里的「拒绝写盘 / 绝不覆盖源图」表述 → 改为「原地覆盖源文件（源图被替换）」。
 
 ## Acceptance criteria
@@ -64,7 +64,7 @@
 
 - **改了什么**：删引擎守卫（`is_same_path_ci` / `path_equal_ci` + `run_files` 的 refuse 分支）+ GUI 日志映射；
   `tests/test_naming.py` 三条「拒写」用例改为「原地覆盖」（含 **PSNR ≥ 40** 内容判据与源图字节断言）；
-  `spec.md:78/82`、`README.md:84`、`CONTEXT.md:48` 四处口径改为「**产物路径与输入路径相同 → 原地覆盖源文件**」
+  `spec.md:78/82`、`README.md:84`、`GLOSSARY.md:48` 四处口径改为「**产物路径与输入路径相同 → 原地覆盖源文件**」
   并补命中（`A.png`/`A.PNG` + `-f png`）与不命中（`A.jpeg` + `-f jpg` → 新增 `A.jpg`）例。
 - **两轴轨迹**：r1 双 `approved`（3 P2）→ fix r2 → r2 双 `approved`（4 P2）→ fix r3 → **r3 双 `approved`**（4 P2 全 report-only）。
 - **编排者裁定留痕**：① 票面原文「`setlocale` 相关引用随之清理」是编排者笔误 → 裁定 **只删守卫与 `CompareStringOrdinal`，保留 `setlocale`**（早于工单 50 存在，决定 `wcstod` 解析 `-s`），票面已订正（`63bfbed`）；② 评审在 diff 里看到的 `docs/lessons.md` 与票面 hunk 是编排者的单独提交（`973a9a9` / `63bfbed`），不属本票交付物。

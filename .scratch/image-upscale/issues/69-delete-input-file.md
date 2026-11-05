@@ -38,7 +38,7 @@
 - [x] 文件夹 + 关后缀段 + 开：整树原地转换（只剩 `a.jpg`/`b.jpg`），产物不被同一轮当输入再处理
 - [x] **写盘失败 → 源图保留**且退出码 3（独占持有目标文件制造失败；红→绿探针见 Comments）
 - [x] 删除失败（源文件被占用）→ 源图保留、产物已写出、退出码 3（`test_delete_input_failure_keeps_source_and_reports_io_error`，以 share=READ|WRITE 不含 DELETE 持有源文件造失败；红→绿：把 `io_failures++` 改成空语句重建 → 用例变红（退出码 0））
-- [x] 文档同步：`spec.md`（命名规则段 + 冲突策略段 + GUI 段）、`README.md`、`CONTEXT.md`（新术语）
+- [x] 文档同步：`spec.md`（命名规则段 + 冲突策略段 + GUI 段）、`README.md`、`GLOSSARY.md`（新术语）
 - [x] 引擎构建 + GUI 构建 + `python -m pytest tests -q` 全绿（108 passed）
 - [ ] 人工验收：实际勾选开关跑一次（未逐条执行，按默认通过口径结清）
 
@@ -70,7 +70,7 @@
 
 ### 实施（2026-09-20）
 
-- 交付：`engine/src/engine_core.cpp`、`gui/MainWindow.xaml{,.cs}`（含 `SettingsStore` 的 `LastDeleteInput`）、`CONTEXT.md`、`README.md`、`spec.md`、新增 `tests/test_delete_input.py`（7 例）。
+- 交付：`engine/src/engine_core.cpp`、`gui/MainWindow.xaml{,.cs}`（含 `SettingsStore` 的 `LastDeleteInput`）、`GLOSSARY.md`、`README.md`、`spec.md`、新增 `tests/test_delete_input.py`（7 例）。
 - **红→绿证据（顺序守卫）**：把删除块临时移到编码写盘之前（模拟"先删再写"）重建引擎 → `test_delete_input_keeps_source_when_write_fails` 变红（`A.png` 不存在）；恢复实现后 7 例全绿。证明该用例真的抓得住"删除时机"这一不变量。
 - 覆盖判定用的是路径比较而非"扩展名相等"：`A.PNG` + `-f png`、`A.jpeg` + `-f jpg` 两种边界各有用例/既有用例。
 - 人工验收（默认通过）：GUI 侧勾选后的真实删除效果只有维护者能跑；未逐条执行，日后提及即可重开。

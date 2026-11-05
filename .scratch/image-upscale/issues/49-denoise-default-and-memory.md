@@ -27,7 +27,7 @@
 - **`docs/lessons.md §2.4` 持久化清单补漏**：该句现为「持久化只记模型、尺寸模式+各模式数值、格式、质量」，
   实际已新增 `LastDownFilter`（工单 42）、`LastAddSuffix`（工单 51）、本票的 `LastDenoise` / `LastDenoise_<modelId>`
   与窗口几何（工单 25）——改写 §2.4 时把这批清单写全（维护者已同意改写 §2.4）。
-- `CONTEXT.md:44` 的「临时选择」表述已在改写范围内（见本票变更文件）。
+- `GLOSSARY.md:44` 的「临时选择」表述已在改写范围内（见本票变更文件）。
 
 ## 维护者定案（2026-09-20 本轮 triage）
 
@@ -60,7 +60,7 @@
   `SettingsStore` 两个槽的读写、`OnModelChanged` 默认/恢复、`DenoiseBox.SelectionChanged` 写回。
 - `.scratch/image-upscale/spec.md`：降噪段（AUTO 段第 50 行附近）、GUI 段第 81 行、
   「降噪档位是临时选择」相关表述。
-- `CONTEXT.md:44`：`降噪（Denoise）` 词条删掉「不跨模型切换与重启记忆」这句。
+- `GLOSSARY.md:44`：`降噪（Denoise）` 词条删掉「不跨模型切换与重启记忆」这句。
 - `docs/lessons.md §2.4`：改写「降噪档位是临时选择」这一句（**已获维护者同意改写**）。
 - `README.md`：降噪档位说明（第 83 行附近）。
 - `.scratch/image-upscale/issues/24-denoise-default-auto.md`：补评论记录定案变更（原文写「不持久化」）。
@@ -90,7 +90,7 @@
 
 - **改了什么**：`gui/MainWindow.xaml.cs`（`ModelEntry` 档位域/默认档/分槽谓词；`SettingsStore` 两个记忆槽 +
   `DenoiseLabels/Tokens` 表；`OnModelChanged` 默认档与恢复、`OnDenoiseChanged` 写回、`OnClosing` 落盘）、
-  `MainWindow.xaml` 注释、`spec.md:51/84`、`CONTEXT.md:44`、`README.md:83`、`docs/lessons.md §2.4`
+  `MainWindow.xaml` 注释、`spec.md:51/84`、`GLOSSARY.md:44`、`README.md:83`、`docs/lessons.md §2.4`
   （**已获维护者同意**的改写 + 持久化清单补全）、`issues/24|14|44` 的「定案变更记录」评论。
 - **两轴轨迹**：r1 spec approved(3 P2) / standards needs-fixes(1 P1+2 P2) → fix r2 → r2 spec approved(2 P2) /
   standards needs-fixes(1 P1+3 P2) → fix r3 → **r3 spec approved(2 P2) / standards approved(0 发现)**。

@@ -20,7 +20,7 @@
 
 推荐 `ready-for-agent`：
 
-- 标签改"现有模型："（"打包"是实现视角词汇，CONTEXT.md 的"模型"定义即用户视角）
+- 标签改"现有模型："（"打包"是实现视角词汇，GLOSSARY.md 的"模型"定义即用户视角）
 - 显示名按 `StringComparer.OrdinalIgnoreCase` 排序后装入（manifest 文件顺序不动，GUI 展示层排序即可）
 - 移除 `ModelGroupText` 显示
 

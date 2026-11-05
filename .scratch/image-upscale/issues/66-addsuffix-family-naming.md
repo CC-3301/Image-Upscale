@@ -25,11 +25,11 @@
 - `gui/MainWindow.xaml` 的 `AddSuffixBox`（:123）
 - ini 键 `LastAddSuffix` —— **不能改**（改了会丢用户设置）
 
-后果：读者在 `_suffixEnabled` 与 `_suppressAddSuffixWrite` 相邻两行内要切两次词汇；`CONTEXT.md` 的术语表只认「文件添加扩展名」，两套族名让 `rg` 检索同名概念时要试两次。
+后果：读者在 `_suffixEnabled` 与 `_suppressAddSuffixWrite` 相邻两行内要切两次词汇；`GLOSSARY.md` 的术语表只认「文件添加扩展名」，两套族名让 `rg` 检索同名概念时要试两次。
 
 ## 方案要点
 
-- 选定一族做统一：**实际定案是统一到 `AddSuffix*`**（含把工单 60 r2 刚改出的 `_suffixEnabled` 也收进族里成 `_addSuffixEnabled`）——ini 键 `LastAddSuffix` 与 `CONTEXT.md` 的「文件添加扩展名」都在这条词根上，这样 `gui/` 内才真正只剩一族（留 `_suffixEnabled` 反而破族）。
+- 选定一族做统一：**实际定案是统一到 `AddSuffix*`**（含把工单 60 r2 刚改出的 `_suffixEnabled` 也收进族里成 `_addSuffixEnabled`）——ini 键 `LastAddSuffix` 与 `GLOSSARY.md` 的「文件添加扩展名」都在这条词根上，这样 `gui/` 内才真正只剩一族（留 `_suffixEnabled` 反而破族）。
 - **`LastAddSuffix` 无论如何不改**。
 - 涉及 XAML 控件名（`AddSuffixBox`）时注意与 `x:Name` 的引用点同步（`UpdateAddSuffixState` / `OnAddSuffixChanged` 的挂接）。
 - 属纯改名，零行为变化。
@@ -50,7 +50,7 @@
 ### 批次收口（2026-09-20，批次 64+65+66 一次闭环）
 
 - **交付（1 个 commit）**：`b051c0d` —— `_suffixEnabled` → `_addSuffixEnabled`、`SuffixEnabledFromIndex` → `AddSuffixEnabledFromIndex`、`SuffixIndexFrom` → `AddSuffixIndexFrom`（含形参与三处注释）。
-- **定案方向**：统一到 `AddSuffix*`（而非票面括号里提的「只保留 `_suffixEnabled`」）——只有这样才能满足 AC1「`gui/` 内只有一族词汇」；`AddSuffix` 词根同时对齐 ini 键 `LastAddSuffix` 与 `CONTEXT.md` 的「文件添加扩展名」。票面「方案要点」已按此订正。
+- **定案方向**：统一到 `AddSuffix*`（而非票面括号里提的「只保留 `_suffixEnabled`」）——只有这样才能满足 AC1「`gui/` 内只有一族词汇」；`AddSuffix` 词根同时对齐 ini 键 `LastAddSuffix` 与 `GLOSSARY.md` 的「文件添加扩展名」。票面「方案要点」已按此订正。
 - **保留不动**：ini 键 `LastAddSuffix`（改了会丢用户设置）、`AddSuffixLabels`、`DefaultAddSuffix`、`s.AddSuffix`、`AddSuffixBox`、`UpdateAddSuffixState`、`OnAddSuffixChanged`、`_suppressAddSuffixWrite`、界面文案；`gui/MainWindow.xaml` 未动。
 - **行为零变化的依据**：6 个读写点 1:1 改名、表达式未变；`dotnet build gui` 0 警告 0 错误（XAML 引用一致）+ `pytest tests -q` **100 passed**。
 - **两轴轨迹**：r1 双 approved（1 P2 为票面口径差）→ 无修复轮（纯改名一次过）→ r2 / r3 / r5 / r6 复审均无新项。
