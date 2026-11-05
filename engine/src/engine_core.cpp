@@ -15,6 +15,11 @@
 #include <exception>
 #include <filesystem>
 
+#if _WIN32
+#include <windows.h>
+#include <shlwapi.h> // StrCmpLogicalW：序列化重命名的排序口径（与资源管理器一致）
+#endif
+
 // stb 为头文件库，实现必须在唯一包含点展开
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -97,6 +102,8 @@ static void print_usage()
     log_out("  --no-rename          same as --suffix none: name the output after the input file\n");
     log_out("  --delete-input       delete the input file after its output is written\n");
     log_out("                       (skipped when the output overwrites the input itself)\n");
+    log_out("  --sequence           name the products 001, 002, ... in each folder's natural order\n");
+    log_out("                       (3-digit padding, more digits past 999; source names never change)\n");
     log_out("  -v                   verbose output\n");
     log_out("  -h                   show this help\n");
 }
@@ -663,6 +670,7 @@ static bool suffix_puts_segment_in_name(SuffixMode mode)
 
 // 产物文件名是否补 -nN（段在文件名上时才补）：开（文件）恒补；开（两者）只在 AUTO 逐文件档位
 // 不一致时补；开（文件夹）/关的文件名永远干净；直通缩放不跑模型，不带降噪段。
+// **只作用于目录输入的产物文件名**：单文件输入走 single_file_outpath，那边恒写整段。
 // run_files 与跑前撞车守卫共用这一处 —— 判据手抄两份时「只改一处」就是静默错名
 static std::wstring product_denoise_seg(SuffixMode suffix, bool direct_resize, bool denoise_per_file,
                                         const std::wstring& file_denoise_seg)
@@ -692,6 +700,7 @@ struct RunOptions
     SuffixMode suffix = SUFFIX_BOTH; // 四态：段落在输出文件夹名上还是产物文件名上
     bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件（产物与输入同路径时跳过）
     bool format_same = false;  // 工单 71：输出格式跟随每个输入自己的格式（扩展名保留输入拼写）
+    bool sequence = false;     // 序列化重命名：产物名主干换成按自然序发的 001/002/…
 };
 
 // 工单 69/68：路径比较的公共口径（lessons §3.13）—— 先 weakly_canonical，把「输入写 A.PNG、
@@ -734,6 +743,64 @@ struct OrdinalLess
     }
 };
 
+// 序列化重命名的排序口径：与 Windows 资源管理器一致 —— 数字按大小、字母不分大小写、中文按拼音。
+// Windows 用 StrCmpLogicalW（资源管理器自身用的比较器：数字按值、忽略大小写、中文按 locale 的拼音序）；
+// 非 Windows 只有开发与测试用途，按「数字按值 → ASCII 字母忽略大小写 → 其余按序数」近似（不做拼音）
+static int compare_natural(const std::wstring& a, const std::wstring& b)
+{
+#if _WIN32
+    return StrCmpLogicalW(a.c_str(), b.c_str());
+#else
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size())
+    {
+        const bool a_digit = a[i] >= L'0' && a[i] <= L'9';
+        const bool b_digit = b[j] >= L'0' && b[j] <= L'9';
+        if (a_digit && b_digit)
+        {
+            // 数字段按值比较：跳过前导零后先比位数（位数少的更小），位数相同再逐位比
+            size_t ai = i;
+            size_t bj = j;
+            while (ai < a.size() && a[ai] == L'0')
+                ai++;
+            while (bj < b.size() && b[bj] == L'0')
+                bj++;
+            size_t ae = ai;
+            size_t be = bj;
+            while (ae < a.size() && a[ae] >= L'0' && a[ae] <= L'9')
+                ae++;
+            while (be < b.size() && b[be] >= L'0' && b[be] <= L'9')
+                be++;
+            const size_t alen = ae - ai;
+            const size_t blen = be - bj;
+            if (alen != blen)
+                return alen < blen ? -1 : 1;
+            for (size_t k = 0; k < alen; k++)
+            {
+                if (a[ai + k] != b[bj + k])
+                    return a[ai + k] < b[bj + k] ? -1 : 1;
+            }
+            // 数值相等（如 1 与 01）→ 继续比后续字符
+            i = ae;
+            j = be;
+            continue;
+        }
+        const wchar_t ca = ordinal_lower(a[i]);
+        const wchar_t cb = ordinal_lower(b[j]);
+        if (ca != cb)
+            return ca < cb ? -1 : 1;
+        i++;
+        j++;
+    }
+    if (i < a.size())
+        return 1;
+    if (j < b.size())
+        return -1;
+    return 0;
+#endif
+}
+
 // 工单 69：两张路径是否指向**同一个文件** —— 判据是「产物原地覆盖了输入」时不得删输入
 // （删的就是刚写出的产物）
 static bool path_equal_ci(const path_t& a, const path_t& b)
@@ -750,15 +817,16 @@ static bool path_equal_ci(const path_t& a, const path_t& b)
 // 开（文件夹）与关等价，产物 = A.<输出格式扩展名>（同格式即原地覆盖源文件）
 // file_denoise_seg 是**本文件**解析出的降噪段（AUTO 时逐文件不同），不取自 naming.denoise_seg（批量档位段）
 // file_ext 是**本文件**的产物扩展名（`--format same` 时跟随输入，故不进 naming）
-static path_t single_file_outpath(const std::filesystem::path& in, const NamingSegments& naming,
-                                  const std::wstring& file_denoise_seg, const path_t& file_ext,
-                                  bool direct_resize, SuffixMode suffix)
+// stem 是产物名主干：序列化重命名时是编号（单文件恒为 001），否则是源文件名
+static path_t single_file_outpath(const std::filesystem::path& in, const std::wstring& stem,
+                                  const NamingSegments& naming, const std::wstring& file_denoise_seg,
+                                  const path_t& file_ext, bool direct_resize, SuffixMode suffix)
 {
     if (!suffix_puts_segment_in_name(suffix))
-        return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"." + file_ext));
+        return iu_fs_path_w(in.parent_path() / iu_fs_path(stem + L"." + file_ext));
     if (direct_resize)
-        return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"-(Resize)-" + naming.scale_seg + L"." + file_ext));
-    return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"-(" + naming.display + L")" + file_denoise_seg + L"-" +
+        return iu_fs_path_w(in.parent_path() / iu_fs_path(stem + L"-(Resize)-" + naming.scale_seg + L"." + file_ext));
+    return iu_fs_path_w(in.parent_path() / iu_fs_path(stem + L"-(" + naming.display + L")" + file_denoise_seg + L"-" +
                                                   naming.scale_seg + L"." + file_ext));
 }
 
@@ -1015,16 +1083,19 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         std::wstring file_denoise_seg = opt.denoise_auto
             ? (L"-n" + std::to_wstring(file_denoise))
             : naming.denoise_seg;
-        const std::wstring name_denoise_seg =
-            product_denoise_seg(opt.suffix, !use_engine, denoise_per_file, file_denoise_seg);
         path_t outpath;
         if (single_file)
         {
             std::filesystem::path in = iu_fs_path(inpath);
-            outpath = single_file_outpath(in, naming, file_denoise_seg, file_fmt.ext, !use_engine, opt.suffix);
+            // 序列化重命名：单文件输入的产物编号恒为 001（本目录只处理它一张）
+            const std::wstring stem = opt.sequence ? L"001" : iu_fs_path_w(in.stem());
+            outpath = single_file_outpath(in, stem, naming, file_denoise_seg, file_fmt.ext, !use_engine,
+                                          opt.suffix);
         }
         else
         {
+            const std::wstring name_denoise_seg =
+                product_denoise_seg(opt.suffix, !use_engine, denoise_per_file, file_denoise_seg);
             outpath = dir_product_path(output_files[i], naming, name_denoise_seg, file_fmt.ext, !use_engine, opt.suffix);
         }
 
@@ -1034,6 +1105,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         //      两路整块跳过，这里补上；
         //   ② 产物与**已写出的产物**同路 —— 如 AUTO 逐文件档位下两个同名输入解析出同一档位。
         // 每个序号只过一次本循环：①比序号即排除「产物覆盖自己」，②命中即必是别的输入写的。
+        // 门控与跑前守卫同一口径：「序列化重命名」与「删除输入文件」都关时才拒绝；任一打开即
+        // 用户主动进入命名/清理模式，一律覆盖、不报错。
+        if (!opt.sequence && !opt.delete_input)
         {
             const std::wstring key = canonical_path_key(outpath);
             auto in_it = input_index.find(key);
@@ -1233,13 +1307,17 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         }
 
         // 编码（按输出格式；质量参数作用于 jpg/webp）—— file_fmt.enc 是本文件的编码器（工单 71）
+        // 写盘顺序固定为「同目录临时文件 → 改名成目标 → 删源」：直接截断写目标时，中断会留下
+        // 半截图（配删除输入文件更可能源与产物都没了）；先写临时文件则目标要么是旧内容、
+        // 要么是完整的新产物。临时名带 .iu-tmp 后缀 —— 不是图片扩展名，二次运行不会被当成输入。
+        const path_t tmppath = outpath + L".iu-tmp";
         bool save_ok = false;
         if (file_fmt.enc == PATHSTR("jpg"))
         {
             MemBuffer buf;
             if (stbi_write_jpg_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, opt.quality))
             {
-                save_ok = write_file_wide(outpath, buf.data.data(), buf.data.size());
+                save_ok = write_file_wide(tmppath, buf.data.data(), buf.data.size());
             }
         }
         else if (file_fmt.enc == PATHSTR("png"))
@@ -1247,18 +1325,28 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             MemBuffer buf;
             if (stbi_write_png_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, outimage.w * outimage.elempack))
             {
-                save_ok = write_file_wide(outpath, buf.data.data(), buf.data.size());
+                save_ok = write_file_wide(tmppath, buf.data.data(), buf.data.size());
             }
         }
         else // webp
         {
-            save_ok = webp_save(outpath.c_str(), outimage.w, outimage.h, outimage.elempack, (const unsigned char*)outimage.data, (float)opt.quality) == 1;
+            save_ok = webp_save(tmppath.c_str(), outimage.w, outimage.h, outimage.elempack, (const unsigned char*)outimage.data, (float)opt.quality) == 1;
         }
 
         if (!save_ok)
         {
             fail(false, "encode image failed", outpath);
             continue;
+        }
+        // 改名成目标：同一目录内 rename，不跨盘搬运；失败时目标保持原样，现场只留临时文件
+        {
+            std::error_code rec;
+            std::filesystem::rename(iu_fs_path(tmppath), iu_fs_path(outpath), rec);
+            if (rec)
+            {
+                fail(false, "cannot write output", outpath);
+                continue;
+            }
         }
         // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8，工单 17）
         log_out("%s -> %s done\n", iu_to_utf8(inpath).c_str(), iu_to_utf8(outpath).c_str());
@@ -1335,6 +1423,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     int down_filter = RF_LANCZOS3; // 工单 42：降采样滤镜，默认 Lanczos
     SuffixMode suffix = SUFFIX_BOTH; // 四态：段落在输出文件夹名上还是产物文件名上（默认两者）
     bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件
+    bool sequence = false;     // 序列化重命名：产物名主干换成按自然序发的编号
     bool denoise_auto = false; // AUTO：按文件伪影估计自动选档（工单 06）
     int verbose = 0;
 
@@ -1455,6 +1544,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         else if (wcscmp(a, L"--delete-input") == 0)
         {
             delete_input = true;
+        }
+        else if (wcscmp(a, L"--sequence") == 0)
+        {
+            sequence = true;
         }
         else if (wcscmp(a, L"-v") == 0)
         {
@@ -1656,11 +1749,18 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         }
 
         // 目录遍历顺序由文件系统决定（ext4 是按名哈希、NTFS 近似创建序）：按相对路径排序，
-        // 让批处理顺序与产物命名的顺序在任何平台上都确定
+        // 让批处理顺序与产物命名的顺序在任何平台上都确定。
+        // 序列化重命名开启时，同一目录内改按资源管理器的自然序排（编号按这个顺序发）；
+        // 目录之间仍按相对路径排 —— 每个目录各自从 001 起，跨目录的先后只影响处理顺序
         std::sort(found.begin(), found.end(),
-                  [](const std::pair<std::filesystem::path, std::filesystem::path>& a,
-                     const std::pair<std::filesystem::path, std::filesystem::path>& b) {
-                      return a.second < b.second;
+                  [sequence](const std::pair<std::filesystem::path, std::filesystem::path>& a,
+                             const std::pair<std::filesystem::path, std::filesystem::path>& b) {
+                      if (!sequence)
+                          return a.second < b.second;
+                      if (a.second.parent_path() != b.second.parent_path())
+                          return a.second.parent_path() < b.second.parent_path();
+                      return compare_natural(iu_fs_path_w(a.second.filename()),
+                                             iu_fs_path_w(b.second.filename())) < 0;
                   });
 
         if (found.empty())
@@ -1695,10 +1795,23 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 例外：后两态与「删除输入文件」合用即整树原地转换/覆盖，二次运行会把产物当输入再跑一轮
         std::error_code ec;
         const std::filesystem::path out_dir_path = in.parent_path() / iu_fs_path(iu_fs_path_w(in.filename()) + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
+        // 序列化重命名的编号：每个目录（相对路径的父目录）各自从 001 起，3 位补零、
+        // 超过 999 自然变 4 位；产物名主干换成本编号，源文件名不动
+        std::map<std::wstring, int, OrdinalLess> sequence_counter;
         for (auto& pair : found)
         {
             input_files.push_back(iu_fs_path_w(pair.first));
-            path_t stem = get_file_name_without_extension(iu_fs_path_w(pair.second.filename()));
+            path_t stem;
+            if (sequence)
+            {
+                wchar_t buf[16];
+                swprintf(buf, 16, L"%03d", ++sequence_counter[iu_fs_path_w(pair.second.parent_path())]);
+                stem = buf;
+            }
+            else
+            {
+                stem = get_file_name_without_extension(iu_fs_path_w(pair.second.filename()));
+            }
             if (suffix_uses_folder(suffix))
                 output_files.push_back(iu_fs_path_w(out_dir_path / pair.second.parent_path() / iu_fs_path(stem)));
             else
@@ -1716,8 +1829,11 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 逐文件档位（AUTO 档位不一致）时产物名在运行期才定 → 这一路跳过跑前检查，由 run_files 的
         // 运行期守卫兜住（同一个 canonical 键，产物撞输入与产物撞产物两条都判）；开（文件）在目标尺寸
         // 模式下逐文件才知走 SR 还是直通缩放（产物名分别是 -(模型名)-… 与 -(Resize)-…），跑前同样算不准。
+        // 门控：「序列化重命名」与「删除输入文件」都关时才生效；任一打开即用户主动进入命名/清理
+        // 模式，产物一律覆盖、不报错（spec「冲突策略」）
+        const bool collision_guard = !sequence && !delete_input;
         const bool name_unknown_before_run = denoise_per_file || (suffix == SUFFIX_FILE && target_mode);
-        if (!name_unknown_before_run)
+        if (collision_guard && !name_unknown_before_run)
         {
             // 判据与 run_files 共用 product_denoise_seg；档位段取本批口径
             // （非 AUTO 用 denoise_seg，AUTO 全批同档用 dir_denoise_seg）
@@ -1885,6 +2001,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         o.verbose = verbose != 0;
         o.suffix = suffix;
         o.delete_input = delete_input;
+        o.sequence = sequence;
         return o;
     }();
     auto run_arch = [&](auto* engine) {

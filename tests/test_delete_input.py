@@ -208,7 +208,8 @@ def test_delete_input_failure_keeps_source_and_reports_io_error(workdir):
 def test_delete_input_keeps_source_when_write_fails(workdir):
     """写盘失败：源图必须留着（删除只挂在写盘成功之后），且以 IO 错误码 3 收场
 
-    目标文件被独占持有 → 编码写盘必失败。若实现改成「先删再写」，本用例会看到源图消失。
+    目标文件被独占持有 → 产物写不进目标（写临时文件成功、改名成目标时被拒）。若实现改成
+    「先删再写」，本用例会看到源图消失。
     """
     folder = workdir / "B"
     folder.mkdir()
@@ -222,4 +223,5 @@ def test_delete_input_keeps_source_when_write_fails(workdir):
 
     assert p.returncode == 3, (p.returncode, p.stderr)
     assert inp.exists()
-    assert "encode image failed" in p.stderr
+    # 写是同目录临时文件 + 改名：临时文件写得进、改名到被独占的目标才失败
+    assert "cannot write output" in p.stderr, p.stderr
