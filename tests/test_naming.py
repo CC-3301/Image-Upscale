@@ -402,3 +402,251 @@ def test_no_rename_direct_resize_same_format_overwrites_in_place(workdir):
     # 没有 -(Resize)-32x 段的新产物：目录内只有源文件本身
     assert sorted(x.name for x in folder.iterdir()) == ["A.png"]
     _assert_in_place_product(inp, ref, size=(32, 32))
+
+# ---- 添加后缀四态（`--suffix both|folder|file|none`；`--no-rename` = none 的同义写法） ----
+# 真值表：四态 × {文件夹输入, 单文件输入} 决定 -(模型名)-nN-<倍率|尺寸> 段落在输出文件夹名还是
+# 产物文件名上。断言只看外部可见行为（产物路径 / 文件名 / 退出码 / 输出日志），不碰内部实现。
+
+def _names(path):
+    """目录内条目名（排序后）：断言产物增减时不必依赖文件系统的遍历顺序"""
+    return sorted(x.name for x in path.iterdir())
+
+
+@needs_engine
+def test_suffix_both_single_file_names_product(workdir):
+    """开（两者，默认）：单文件产物名带整段后缀段"""
+    inp = workdir / "A.png"
+    make_png(inp)
+
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--suffix", "both"])
+    assert p.returncode == 0, p.stderr
+    assert _names(workdir) == [f"A-{MODEL_TAG}-n0-2.0x.png", "A.png"]
+
+
+@needs_engine
+def test_suffix_file_single_file_names_product(workdir):
+    """开（文件）：单文件没有输出文件夹可挂段，段落在产物文件名上（与开（两者）同款）"""
+    inp = workdir / "A.png"
+    make_png(inp)
+
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--suffix", "file"])
+    assert p.returncode == 0, p.stderr
+    assert _names(workdir) == [f"A-{MODEL_TAG}-n0-2.0x.png", "A.png"]
+
+
+@needs_engine
+def test_suffix_folder_single_file_overwrites_source(workdir):
+    """开（文件夹）+ 单文件：没有输出文件夹可挂段 → 产物 = 源文件本身（同格式即原地覆盖）
+
+    尺寸只证明「源文件被替换」，内容是否本次结果由目录内没有第二个文件守住（无新增产物）。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)
+    before = inp.read_bytes()
+
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--suffix", "folder"])
+    assert p.returncode == 0, p.stderr
+    assert _names(folder) == ["A.png"]
+    assert inp.read_bytes() != before
+    assert Image.open(inp).size == (128, 128)
+
+
+@needs_engine
+def test_suffix_folder_single_file_warns_overwrite_at_end_of_log(workdir):
+    """开（文件夹）+ 单文件 + 同格式：产物覆盖源文件 → 输出日志最末尾追加一句覆盖警告"""
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)
+
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--suffix", "folder"])
+    assert p.returncode == 0, p.stderr
+    lines = [l for l in p.stdout.splitlines() if l.strip()]
+    assert "overwrote the input file" in lines[-1], lines[-3:]
+
+
+@needs_engine
+def test_suffix_folder_single_file_no_warning_when_product_is_new_file(workdir):
+    """开（文件夹）+ 单文件 + 异格式：产物是新文件，源图没被覆盖 → 不追加覆盖警告"""
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)
+    before = inp.read_bytes()
+
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--suffix", "folder"])
+    assert p.returncode == 0, p.stderr
+    assert _names(folder) == ["A.jpg", "A.png"]
+    assert inp.read_bytes() == before
+    assert "overwrote the input file" not in p.stdout
+
+
+@needs_engine
+def test_suffix_none_single_file_keeps_original_name(workdir):
+    """关 + 单文件：产物 = 源文件同目录 + 原文件名 + 输出格式扩展名（无任何后缀段）"""
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)
+
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+    assert _names(folder) == ["A.jpg", "A.png"]
+
+
+@needs_engine
+def test_no_rename_is_synonym_of_suffix_none(workdir):
+    """`--no-rename` 与 `--suffix none` 同义：产物路径与字节一致"""
+    products = {}
+    for tag, extra in (("no-rename", ["--no-rename"]), ("suffix-none", ["--suffix", "none"])):
+        folder = workdir / tag
+        folder.mkdir()
+        inp = folder / "A.png"
+        make_png(inp)
+        p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", *extra])
+        assert p.returncode == 0, (tag, p.stderr)
+        products[tag] = {x.name: x.read_bytes() for x in folder.iterdir()}
+
+    assert products["no-rename"].keys() == products["suffix-none"].keys() == {"A.png", "A.jpg"}, products
+    assert products["no-rename"] == products["suffix-none"]
+
+
+@needs_engine
+def test_suffix_both_folder_input_matches_default_naming(workdir):
+    """开（两者，默认）：产物进同级输出文件夹，内部文件名原样镜像（无段）"""
+    folder = workdir / "manga"
+    folder.mkdir()
+    make_png(folder / "p001.png")
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--suffix", "both"])
+    assert p.returncode == 0, p.stderr
+    outdir = workdir / f"manga-{MODEL_TAG}-n0-2.0x"
+    assert _names(outdir) == ["p001.png"]
+    assert _names(folder) == ["p001.png"]
+
+
+@needs_engine
+def test_suffix_folder_folder_input_keeps_filenames_clean(workdir):
+    """开（文件夹）：输出文件夹名带段，内部文件名永远干净（不进源目录）"""
+    folder = workdir / "manga"
+    folder.mkdir()
+    make_png(folder / "p001.png")
+    make_png(folder / "p002.png")
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--suffix", "folder"])
+    assert p.returncode == 0, p.stderr
+    outdir = workdir / f"manga-{MODEL_TAG}-n0-2.0x"
+    assert _names(outdir) == ["p001.png", "p002.png"]
+    assert _names(folder) == ["p001.png", "p002.png"]
+
+
+@needs_engine
+def test_suffix_file_folder_input_writes_segment_into_filename(workdir):
+    """开（文件）：不建输出目录，产物落源目录、文件名带整段"""
+    folder = workdir / "manga"
+    folder.mkdir()
+    make_png(folder / "p001.png")
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--suffix", "file"])
+    assert p.returncode == 0, p.stderr
+    assert _names(folder) == [f"p001-{MODEL_TAG}-n0-2.0x.png", "p001.png"]
+    assert not (workdir / f"manga-{MODEL_TAG}-n0-2.0x").exists()
+
+
+@needs_engine
+def test_suffix_none_folder_input_writes_next_to_sources(workdir):
+    """关：整树原地生成同名产物，不建输出目录"""
+    folder = workdir / "manga"
+    folder.mkdir()
+    make_png(folder / "p001.png")
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+    assert _names(folder) == ["p001.jpg", "p001.png"]
+    assert not (workdir / f"manga-{MODEL_TAG}-n0-2.0x").exists()
+
+
+@needs_engine
+def test_suffix_file_folder_rejects_colliding_outputs(workdir):
+    """开（文件）+ 目录里同 stem 不同扩展名 → 两个产物算到同一路径，跑之前拒绝（退出码 1）
+
+    段落在文件名上而不是目录名上，撞车判据与关（`--no-rename`）同款：产物名只差扩展名。
+    """
+    folder = workdir / "collide"
+    folder.mkdir()
+    make_png(folder / "a.png", size=(32, 32))
+    make_jpg(folder / "a.jpg", size=(32, 32))
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "file"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "are the same file" in p.stderr, p.stderr
+    assert {q.name: q.read_bytes() for q in folder.iterdir()} == before
+
+
+@needs_engine
+def test_suffix_folder_auto_mixed_levels_keep_filenames_clean(workdir):
+    """开（文件夹）+ AUTO 逐文件档位不同：目录名写 -nX，内部文件名干净、不带 -nN"""
+    folder = workdir / "mixed"
+    folder.mkdir()
+    clean = folder / "a.png"
+    make_gradient(clean)
+    dirty = folder / "b.jpg"
+    make_gradient(dirty)
+    Image.open(dirty).save(dirty, quality=10)
+
+    p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto",
+                    "-f", "png", "-g", "-1", "-v", "--suffix", "folder"])
+    assert p.returncode == 0, p.stderr
+    levels = auto_levels_by_file(p.stderr)
+    # 顺序守卫：档位必须真的不一致，否则本用例空转通过
+    assert len(set(levels.values())) == 2, levels
+
+    outdir = workdir / "mixed-(waifu2x_cunet)-nX-2.0x"
+    assert _names(outdir) == ["a.png", "b.png"]
+
+
+@needs_engine
+def test_suffix_both_auto_mixed_levels_put_levels_into_filenames(workdir):
+    """开（两者）+ AUTO 逐文件档位不同：目录名写 -nX，每个产物文件名各补自己的 -nN"""
+    folder = workdir / "mixed"
+    folder.mkdir()
+    clean = folder / "a.png"
+    make_gradient(clean)
+    dirty = folder / "b.jpg"
+    make_gradient(dirty)
+    Image.open(dirty).save(dirty, quality=10)
+
+    p = run_engine(["-i", folder, "-m", "waifu2x_cunet", "--denoise", "auto",
+                    "-f", "png", "-g", "-1", "-v", "--suffix", "both"])
+    assert p.returncode == 0, p.stderr
+    levels = auto_levels_by_file(p.stderr)
+    assert len(set(levels.values())) == 2, levels
+
+    outdir = workdir / "mixed-(waifu2x_cunet)-nX-2.0x"
+    assert _names(outdir) == [f"a-n{levels[str(clean)]}.png", f"b-n{levels[str(dirty)]}.png"]
+
+
+@needs_engine
+def test_suffix_rejects_unknown_value(workdir):
+    """`--suffix` 只认 both/folder/file/none，其它值以参数错误退出"""
+    inp = workdir / "A.png"
+    make_png(inp)
+
+    p = run_engine(["-i", inp, "--suffix", "bogus"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "--suffix" in p.stderr
+
+
+@needs_engine
+def test_help_documents_suffix_four_states(workdir):
+    """`-h` 说明 `--suffix` 的四个取值，并保留 `--no-rename` 同义写法"""
+    p = run_engine(["-h"])
+    assert p.returncode == 0, p.stderr
+    assert "--suffix" in p.stdout
+    for token in ("both", "folder", "file", "none"):
+        assert token in p.stdout, (token, p.stdout)
+    assert "--no-rename" in p.stdout
+
