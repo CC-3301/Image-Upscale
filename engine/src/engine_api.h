@@ -5,7 +5,11 @@
 #define IU_ENGINE_API_H
 
 #ifdef IU_ENGINE_BUILDING
+#if _WIN32
 #define IU_API extern "C" __declspec(dllexport)
+#else
+#define IU_API extern "C" __attribute__((visibility("default")))
+#endif
 #else
 #define IU_API extern "C"
 #endif

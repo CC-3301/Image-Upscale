@@ -85,15 +85,15 @@ def test_models_resolved_relative_to_engine_exe(tmp_path, workdir):
     旧引擎按 CWD 找清单会报 cannot read models/manifest.conf。"""
     import shutil
     import subprocess
-    from conftest import ENGINE, REPO
+    from conftest import ENGINE, ENGINE_EXE, ENGINE_LIB, REPO
 
     engine_dir = tmp_path / "engine"
     engine_dir.mkdir()
-    engine_copy = engine_dir / "image-upscale.exe"
+    engine_copy = engine_dir / ENGINE_EXE
     shutil.copy2(ENGINE, engine_copy)
-    # 必须连 iu_engine.dll 一起复制：否则进程在加载导入表时就失败（0xC000013B）——
+    # 必须连引擎动态库一起复制：否则进程在加载导入表/动态链接时就失败——
     # 什么都读不到、stderr 为空，旧版弱断言（只查某错误串不在 stderr）会因此假绿
-    shutil.copy2(ENGINE.parent / "iu_engine.dll", engine_dir / "iu_engine.dll")
+    shutil.copy2(ENGINE.parent / ENGINE_LIB, engine_dir / ENGINE_LIB)
     (tmp_path / "models").mkdir()
     shutil.copy(MODELS_DIR / "manifest.conf", tmp_path / "models" / "manifest.conf")
 
@@ -227,12 +227,12 @@ def test_engine_relative_models_wins_over_cwd(tmp_path, workdir):
     """
     import shutil
     import subprocess
-    from conftest import ENGINE
+    from conftest import ENGINE, ENGINE_EXE, ENGINE_LIB
 
     engine_dir = tmp_path / "engine"
     engine_dir.mkdir()
-    shutil.copy2(ENGINE, engine_dir / "image-upscale.exe")
-    shutil.copy2(ENGINE.parent / "iu_engine.dll", engine_dir / "iu_engine.dll")
+    shutil.copy2(ENGINE, engine_dir / ENGINE_EXE)
+    shutil.copy2(ENGINE.parent / ENGINE_LIB, engine_dir / ENGINE_LIB)
 
     (tmp_path / "models").mkdir()
     (tmp_path / "models" / "manifest.conf").write_text(
@@ -248,7 +248,7 @@ def test_engine_relative_models_wins_over_cwd(tmp_path, workdir):
     inp = workdir / "in.png"
     make_png(inp, size=(48, 32))
     p = subprocess.run(
-        [str(engine_dir / "image-upscale.exe"), "-i", str(inp), "-m", "ghost", "-g", "-1"],
+        [str(engine_dir / ENGINE_EXE), "-i", str(inp), "-m", "ghost", "-g", "-1"],
         capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd)
     assert p.returncode == 2, (p.returncode, p.stderr)
     assert "model load failed" in p.stderr, p.stderr

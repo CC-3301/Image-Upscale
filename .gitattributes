@@ -1,0 +1,20 @@
+# 行尾统一：仓库内一律 LF，工作区检出也强制 LF（Windows 亦然）
+* text=auto eol=lf
+
+# 二进制资源：禁止行尾/编码转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.gif binary
+*.zip binary
+*.7z binary
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+*.db binary
+*.onnx binary
+*.param binary
+*.bin binary

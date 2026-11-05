@@ -126,7 +126,7 @@ struct ModelInfo
 
 static bool parse_manifest(const path_t& path, std::vector<ModelInfo>& out)
 {
-    FILE* fp = _wfopen(path.c_str(), L"rb");
+    FILE* fp = iu_fopen(path, "rb");
     if (!fp)
         return false;
 
@@ -283,7 +283,7 @@ static void stb_write_callback(void* context, void* data, int size)
 
 static bool write_file_wide(const std::wstring& path, const unsigned char* data, size_t len)
 {
-    FILE* fp = _wfopen(path.c_str(), L"wb");
+    FILE* fp = iu_fopen(path, "wb");
     if (!fp)
         return false;
     size_t written = fwrite(data, 1, len, fp);
@@ -390,7 +390,7 @@ static int estimate_denoise_level(const unsigned char* rgb, int w, int h)
 // 只能体现首文件档位——故先解一次首文件。解码/内存失败返回 0（等同"无降噪"）。
 static int probe_denoise_level(const path_t& path, const path_t& format)
 {
-    FILE* fp = _wfopen(path.c_str(), L"rb");
+    FILE* fp = iu_fopen(path, "rb");
     if (!fp)
         return 0;
     fseek(fp, 0, SEEK_END);
@@ -661,17 +661,37 @@ struct RunOptions
 static std::wstring canonical_path_key(const path_t& p)
 {
     std::error_code ec;
-    const std::filesystem::path c = std::filesystem::weakly_canonical(p, ec);
-    return ec ? p : c.wstring();
+    const std::filesystem::path c = std::filesystem::weakly_canonical(iu_fs_path(p), ec);
+    return ec ? p : iu_fs_path_w(c);
 }
 
 // 大小写不敏感的严格弱序（口径同上）—— 供「按路径建索引」的容器使用（工单 68 的产物撞输入检测），
 // 不必先把路径折成小写串：折大小写要么依赖 locale、要么自写规则，都是多一个真相来源
+#if !_WIN32
+// 只折叠 ASCII：不依赖 locale，跨机器结果一致（Windows 侧用 CompareStringOrdinal 的不变语义）
+static wchar_t ordinal_lower(wchar_t c)
+{
+    return (c >= L'A' && c <= L'Z') ? (wchar_t)(c - L'A' + L'a') : c;
+}
+#endif
+
 struct OrdinalLess
 {
     bool operator()(const std::wstring& a, const std::wstring& b) const
     {
+#if _WIN32
         return CompareStringOrdinal(a.c_str(), (int)a.size(), b.c_str(), (int)b.size(), TRUE) == CSTR_LESS_THAN;
+#else
+        const size_t n = a.size() < b.size() ? a.size() : b.size();
+        for (size_t i = 0; i < n; i++)
+        {
+            const wchar_t ca = ordinal_lower(a[i]);
+            const wchar_t cb = ordinal_lower(b[i]);
+            if (ca != cb)
+                return ca < cb;
+        }
+        return a.size() < b.size();
+#endif
     }
 };
 
@@ -695,11 +715,11 @@ static path_t single_file_outpath(const std::filesystem::path& in, const NamingS
                                   bool direct_resize, bool no_rename)
 {
     if (no_rename)
-        return in.parent_path() / (in.stem().wstring() + L"." + file_ext);
+        return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"." + file_ext));
     if (direct_resize)
-        return in.parent_path() / (in.stem().wstring() + L"-(Resize)-" + naming.scale_seg + L"." + file_ext);
-    return in.parent_path() / (in.stem().wstring() + L"-(" + naming.display + L")" + file_denoise_seg + L"-" +
-                               naming.scale_seg + L"." + file_ext);
+        return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"-(Resize)-" + naming.scale_seg + L"." + file_ext));
+    return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"-(" + naming.display + L")" + file_denoise_seg + L"-" +
+                                                  naming.scale_seg + L"." + file_ext));
 }
 
 // 工单 71：输入扩展名 → 编码器 token（jpeg/jpg → jpg；大小写不敏感）。
@@ -735,7 +755,7 @@ static OutputFormat output_format_of(const path_t& inpath, bool format_same, con
         f.enc = format;
         return f;
     }
-    f.ext = get_file_extension(std::filesystem::path(inpath).filename().wstring());
+    f.ext = get_file_extension(iu_fs_path_w(iu_fs_path(inpath).filename()));
     f.enc = encoder_of_input_extension(f.ext);
     return f;
 }
@@ -795,7 +815,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         int h = 0;
         int c = 0;
         {
-            FILE* fp = _wfopen(inpath.c_str(), L"rb");
+            FILE* fp = iu_fopen(inpath, "rb");
             if (!fp)
             {
                 fail(false, "cannot open input", inpath);
@@ -941,7 +961,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         path_t outpath;
         if (single_file)
         {
-            std::filesystem::path in(inpath);
+            std::filesystem::path in = iu_fs_path(inpath);
             outpath = single_file_outpath(in, naming, file_denoise_seg, file_fmt.ext, !use_engine, opt.no_rename);
         }
         else if (denoise_per_file && use_engine)
@@ -1193,7 +1213,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             else
             {
                 std::error_code ec;
-                std::filesystem::remove(inpath, ec);
+                std::filesystem::remove(iu_fs_path(inpath), ec);
                 if (ec)
                 {
                     log_err("cannot delete input: %s\n", iu_to_utf8(inpath).c_str());
@@ -1269,13 +1289,13 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         }
         else if (wcscmp(a, L"--width") == 0 && i + 1 < argc)
         {
-            target_value = _wtoi(argv[++i]);
+            target_value = iu_wtoi(argv[++i]);
             width_given = true;
             target_is_width = true;
         }
         else if (wcscmp(a, L"--height") == 0 && i + 1 < argc)
         {
-            target_value = _wtoi(argv[++i]);
+            target_value = iu_wtoi(argv[++i]);
             height_given = true;
             target_is_width = false;
         }
@@ -1331,15 +1351,15 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         }
         else if (wcscmp(a, L"-q") == 0 && i + 1 < argc)
         {
-            quality = _wtoi(argv[++i]);
+            quality = iu_wtoi(argv[++i]);
         }
         else if (wcscmp(a, L"-t") == 0 && i + 1 < argc)
         {
-            tilesize_arg = _wtoi(argv[++i]);
+            tilesize_arg = iu_wtoi(argv[++i]);
         }
         else if (wcscmp(a, L"-g") == 0 && i + 1 < argc)
         {
-            gpuid_arg = _wtoi(argv[++i]);
+            gpuid_arg = iu_wtoi(argv[++i]);
         }
         else if (wcscmp(a, L"--models-dir") == 0 && i + 1 < argc)
         {
@@ -1420,15 +1440,14 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     // dist 布局 models 在引擎同级，GUI 以引擎目录为工作目录启动，开发布局两者解析到同一个仓库 models/
     if (!models_dir_given)
     {
-        wchar_t exe_buf[MAX_PATH];
-        GetModuleFileNameW(NULL, exe_buf, MAX_PATH);
-        const std::filesystem::path exe_dir = std::filesystem::path(exe_buf).parent_path();
-        for (const std::wstring& cand : { (exe_dir / L"models").wstring(),
-                                          (exe_dir / L".." / L"models").wstring(),
-                                          std::wstring(L"models") })
+        // 候选目录由 exe 自身位置推出（不信任 CWD），与启动方式无关
+        const path_t exe_dir = get_executable_directory();
+        for (const path_t& cand : { exe_dir + PATHSTR("models"),
+                                    exe_dir + PATHSTR("../models"),
+                                    path_t(PATHSTR("models")) })
         {
             std::error_code ec;
-            if (std::filesystem::exists(cand + PATHSTR("/manifest.conf"), ec))
+            if (std::filesystem::exists(std::filesystem::u8path(iu_utf8_encode(cand + PATHSTR("/manifest.conf"))), ec))
             {
                 models_dir = cand;
                 break;
@@ -1533,18 +1552,26 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
 
     if (input_is_dir)
     {
-        std::filesystem::path in(inputpath);
+        std::filesystem::path in = iu_fs_path(inputpath);
 
         // 递归收集（工单 05）：仅顶层文件夹重命名，内部目录结构与文件名原样镜像
         std::vector<std::pair<std::filesystem::path, std::filesystem::path>> found; // (full, rel)
-        for (auto& entry : std::filesystem::recursive_directory_iterator(inputpath))
+        for (auto& entry : std::filesystem::recursive_directory_iterator(iu_fs_path(inputpath)))
         {
             if (!entry.is_regular_file())
                 continue;
-            if (!ext_is_image(get_file_extension(entry.path().filename().wstring())))
+            if (!ext_is_image(get_file_extension(iu_fs_path_w(entry.path().filename()))))
                 continue;
-            found.push_back({entry.path(), std::filesystem::relative(entry.path(), inputpath)});
+            found.push_back({entry.path(), std::filesystem::relative(entry.path(), iu_fs_path(inputpath))});
         }
+
+        // 目录遍历顺序由文件系统决定（ext4 是按名哈希、NTFS 近似创建序）：按相对路径排序，
+        // 让批处理顺序与产物命名的顺序在任何平台上都确定
+        std::sort(found.begin(), found.end(),
+                  [](const std::pair<std::filesystem::path, std::filesystem::path>& a,
+                     const std::pair<std::filesystem::path, std::filesystem::path>& b) {
+                      return a.second < b.second;
+                  });
 
         if (found.empty())
         {
@@ -1564,10 +1591,10 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
             auto probe_enc = [&](const path_t& p) {
                 return output_format_of(p, format_same, format).enc;
             };
-            int first_level = probe_denoise_level(found.front().first.wstring(), probe_enc(found.front().first.wstring()));
+            int first_level = probe_denoise_level(iu_fs_path_w(found.front().first), probe_enc(iu_fs_path_w(found.front().first)));
             bool uniform = true;
             for (size_t i = 1; i < found.size() && uniform; i++)
-                uniform = probe_denoise_level(found[i].first.wstring(), probe_enc(found[i].first.wstring())) == first_level;
+                uniform = probe_denoise_level(iu_fs_path_w(found[i].first), probe_enc(iu_fs_path_w(found[i].first))) == first_level;
 
             denoise_per_file = !uniform;
             dir_denoise_seg = denoise_per_file ? L"-nX" : (L"-n" + std::to_wstring(first_level));
@@ -1577,15 +1604,15 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 产物落**源文件同目录**（原文件名 + 输出格式扩展名），不再另建「-(模型名)-nN-倍率」输出目录
         // 例外：与「删除输入文件」合用即整树原地转换/覆盖，二次运行会把产物当输入再跑一轮（票面已收录）
         std::error_code ec;
-        const std::filesystem::path out_dir_path = in.parent_path() / (in.filename().wstring() + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
+        const std::filesystem::path out_dir_path = in.parent_path() / iu_fs_path(iu_fs_path_w(in.filename()) + L"-(" + wdisplay + L")" + dir_denoise_seg + L"-" + scale_seg);
         for (auto& pair : found)
         {
-            input_files.push_back(pair.first.wstring());
-            path_t stem = get_file_name_without_extension(pair.second.filename().wstring());
+            input_files.push_back(iu_fs_path_w(pair.first));
+            path_t stem = get_file_name_without_extension(iu_fs_path_w(pair.second.filename()));
             if (no_rename)
-                output_files.push_back((pair.first.parent_path() / stem).wstring());
+                output_files.push_back(iu_fs_path_w(pair.first.parent_path() / iu_fs_path(stem)));
             else
-                output_files.push_back((out_dir_path / pair.second.parent_path() / stem).wstring());
+                output_files.push_back(iu_fs_path_w(out_dir_path / pair.second.parent_path() / iu_fs_path(stem)));
         }
 
         // 工单 70：跑前撞车守卫（**两条命名路径都适用**，工单 68 只守了关闭后缀段那一路）：
@@ -1641,7 +1668,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
             std::filesystem::create_directories(out_dir_path, ec);
             if (ec)
             {
-                log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(out_dir_path.wstring()).c_str(), ec.message().c_str());
+                log_err("cannot create output directory: %s (%s)\n", iu_to_utf8(iu_fs_path_w(out_dir_path)).c_str(), ec.message().c_str());
                 return EXIT_IO;
             }
             for (auto& pair : found)

@@ -12,14 +12,9 @@
 #include <stddef.h>
 #include <string>
 
-// 路径类型：必须与 filesystem_utils.h 的 path_t 同语义（Windows 宽字符 / 其他平台窄字符），
-// 模型侧的 load() 形参就按它取宽窄，改一处必须同步改另一处
-#if _WIN32
-#include <windows.h>
+// 路径类型统一为宽字符（见 iu_path.h），模型侧 load() 的形参也按它取
+#include "iu_path.h"
 typedef std::wstring iu_path_t;
-#else
-typedef std::string iu_path_t;
-#endif
 
 // 一行 UTF-8 输出（须自带结尾 '\n'）；形参与 engine_api.h 的 iu_line_cb 一致，
 // 引擎核心可直接登记宿主回调，无需再包一层适配器
@@ -47,20 +42,10 @@ inline void iu_set_log_sink(iu_log_sink sink, void* user)
     slot.user = user;
 }
 
-// 宽字符 → UTF-8（Windows 走 WideCharToMultiByte；其他平台路径本就是窄字符，直接透传）
+// 宽字符 → UTF-8（平台实现见 iu_path.h）
 inline std::string iu_to_utf8(const iu_path_t& s)
 {
-#if _WIN32
-    if (s.empty())
-        return std::string();
-    int n = WideCharToMultiByte(CP_UTF8, 0, s.c_str(), (int)s.size(), NULL, NULL, NULL, NULL);
-    std::string out((size_t)(n > 0 ? n : 0), '\0');
-    if (n > 0)
-        WideCharToMultiByte(CP_UTF8, 0, s.c_str(), (int)s.size(), &out[0], n, NULL, NULL);
-    return out;
-#else
-    return s;
-#endif
+    return iu_utf8_encode(s);
 }
 
 // 输出一行；未注册 sink 时丢弃（绝不退回直写 stderr）

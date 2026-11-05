@@ -10,6 +10,11 @@ from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
 
+# 引擎产物名按平台区分：Windows 是 image-upscale.exe + iu_engine.dll，
+# Linux 是无后缀可执行文件 + libiu_engine.so
+ENGINE_EXE = "image-upscale.exe" if os.name == "nt" else "image-upscale"
+ENGINE_LIB = "iu_engine.dll" if os.name == "nt" else "libiu_engine.so"
+
 
 def _resolve_engine():
     """引擎路径：IU_ENGINE 显式指定 > bld/（本仓库构建产物）> build/Release/（旧布局兜底）。
@@ -19,8 +24,8 @@ def _resolve_engine():
     env = os.environ.get("IU_ENGINE")
     if env:
         return Path(env)
-    legacy = REPO / "build" / "Release" / "image-upscale.exe"
-    return legacy if legacy.exists() else REPO / "bld" / "image-upscale.exe"
+    legacy = REPO / "build" / "Release" / ENGINE_EXE
+    return legacy if legacy.exists() else REPO / "bld" / ENGINE_EXE
 
 
 ENGINE = _resolve_engine()
@@ -52,7 +57,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
     else:
         terminalreporter.write_sep("=", "警告：引擎未构建，测试未真正执行", red=True, bold=True)
         terminalreporter.write_line(f"引擎路径不存在：{ENGINE}")
-        terminalreporter.write_line("先构建引擎（scripts\\engine-build.bat），或设 IU_ENGINE 指向 image-upscale.exe")
+        terminalreporter.write_line("先构建引擎（scripts/engine-build.bat 或 scripts/engine-build.sh），或设 IU_ENGINE 指向引擎可执行文件")
     terminalreporter.write_line(f"被跳过：{len(skipped)} 个用例 —— 本次全绿不代表这些用例通过")
     for report in skipped[:10]:
         terminalreporter.write_line(f"  · {report.nodeid}：{_skip_reason(report)}")

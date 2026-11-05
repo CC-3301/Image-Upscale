@@ -4,10 +4,15 @@
 产物存在 / 源文件是否还在 / 退出码 / stderr 文案。GUI 侧的开关与 setting.ini 无自动化测试（人工验收）。
 """
 import ctypes
+import os
 
+import pytest
 from PIL import Image
 
 from conftest import MODEL, make_jpg, make_png, needs_engine, run_engine
+
+# 独占句柄语义依赖 Windows CreateFileW；Linux 无对应语义，整文件跳过
+pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows 独占句柄语义")
 
 MODEL_TAG = f"({MODEL})"
 

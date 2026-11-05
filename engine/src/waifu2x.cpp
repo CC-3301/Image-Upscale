@@ -48,11 +48,7 @@ void Waifu2x::release()
     }
 }
 
-#if _WIN32
 int Waifu2x::load(const std::wstring& parampath, const std::wstring& modelpath)
-#else
-int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
-#endif
 {
     release(); // 切倍数 / 切降噪档的重复加载：先丢掉上一次的权重与管线
 
@@ -75,9 +71,8 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
         net.opt.use_sgemm_convolution = false;
     }
 
-#if _WIN32
     {
-        FILE* fp = _wfopen(parampath.c_str(), L"rb");
+        FILE* fp = iu_fopen(parampath, "rb");
         if (!fp)
         {
             iu_log_path_error("cannot open model file: ", parampath);
@@ -94,7 +89,7 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
             return -1;
     }
     {
-        FILE* fp = _wfopen(modelpath.c_str(), L"rb");
+        FILE* fp = iu_fopen(modelpath, "rb");
         if (!fp)
         {
             iu_log_path_error("cannot open model file: ", modelpath);
@@ -108,12 +103,6 @@ int Waifu2x::load(const std::string& parampath, const std::string& modelpath)
         if (mret != 0)
             return -1;
     }
-#else
-    if (net.load_param(parampath.c_str()) != 0)
-        return -1;
-    if (net.load_model(modelpath.c_str()) != 0)
-        return -1;
-#endif
 
     // initialize preprocess and postprocess pipeline
     if (vkdev)

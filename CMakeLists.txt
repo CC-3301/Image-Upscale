@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 
-# 静态 CRT（后续 portable 发布依赖此设置）
-cmake_policy(SET CMP0091 NEW)
-set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+# 静态 CRT（后续 portable 发布依赖此设置；该选项只对 MSVC 有意义）
+if(MSVC)
+    cmake_policy(SET CMP0091 NEW)
+    set(CMAKE_POLICY_DEFAULT_CMP0091 NEW)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 project(image-upscale)
 
@@ -18,6 +20,13 @@ option(USE_SYSTEM_NCNN "build with system libncnn" OFF)
 find_package(Threads)
 find_package(Vulkan REQUIRED)
 
+# 可执行文件与 iu_engine 始终同目录（构建与发布布局相同）：非 MSVC 用 $ORIGIN，
+# 复制 exe+so 到任意目录也能直接运行（test_models 的布局用例依赖这一点）
+if(NOT MSVC)
+    set(CMAKE_BUILD_RPATH_USE_ORIGIN ON)
+    set(CMAKE_INSTALL_RPATH "$ORIGIN")
+endif()
+
 # shader 源码内嵌为头文件（ncnn 运行时编译 GLSL -> SPIRV）
 macro(image_upscale_add_shader SHADER_SRC)
     get_filename_component(SHADER_SRC_NAME_WE ${SHADER_SRC} NAME_WE)
@@ -26,7 +35,7 @@ macro(image_upscale_add_shader SHADER_SRC)
     add_custom_command(
         OUTPUT ${SHADER_COMP_HEADER}
         COMMAND ${CMAKE_COMMAND} -DSHADER_SRC=${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SRC} -DSHADER_COMP_HEADER=${SHADER_COMP_HEADER} -P "${CMAKE_CURRENT_SOURCE_DIR}/engine/src/generate_shader_comp_header.cmake"
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SRC}
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${SHADER_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/generate_shader_comp_header.cmake
         COMMENT "Preprocessing shader source ${SHADER_SRC_NAME_WE}.comp"
         VERBATIM
     )
@@ -255,8 +264,12 @@ if(IU_ENABLE_ASAN)
     # 而 iu_engine 与 image-upscale 都在本块之前就已创建（原实现等于开关空转）
     # 注意：ASAN 与静态 CRT（/MT）不兼容，需要时另行调整
     foreach(_iu_tgt iu_engine image-upscale)
-        target_compile_options(${_iu_tgt} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/fsanitize=address>)
-        target_link_options(${_iu_tgt} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/fsanitize=address>)
+        target_compile_options(${_iu_tgt} PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/fsanitize=address>
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-fsanitize=address>)
+        target_link_options(${_iu_tgt} PRIVATE
+            $<$<CXX_COMPILER_ID:MSVC>:/fsanitize=address>
+            $<$<CXX_COMPILER_ID:GNU,Clang>:-fsanitize=address>)
     endforeach()
 endif()
 

@@ -7,6 +7,8 @@
 //   2. webp_save 增加有损质量参数（0-100，对应规格的 -q/--quality）
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
+#include "iu_path.h"
 #include "webp/decode.h"
 #include "webp/encode.h"
 
@@ -48,11 +50,7 @@ unsigned char* webp_load(const unsigned char* buffer, int len, int* w, int* h, i
     return pixeldata;
 }
 
-#if _WIN32
 int webp_save(const wchar_t* filepath, int w, int h, int c, const unsigned char* pixeldata, float quality)
-#else
-int webp_save(const char* filepath, int w, int h, int c, const unsigned char* pixeldata, float quality)
-#endif
 {
     int ret = 0;
 
@@ -79,11 +77,7 @@ int webp_save(const char* filepath, int w, int h, int c, const unsigned char* pi
     if (length == 0)
         goto RETURN;
 
-#if _WIN32
-    fp = _wfopen(filepath, L"wb");
-#else
-    fp = fopen(filepath, "wb");
-#endif
+    fp = iu_fopen(path_t(filepath), "wb");
     if (!fp)
         goto RETURN;
 

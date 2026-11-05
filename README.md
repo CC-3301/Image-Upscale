@@ -28,6 +28,24 @@ dotnet build gui\ImageUpscaleGui.csproj -c Release
 powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z
 ```
 
+## 构建（Linux）
+
+图形界面是 WPF，仅 Windows 提供；Linux 只构建引擎命令行与测试缝（`bld/image-upscale`、`bld/libiu_engine.so`）。
+
+前置：C++17 编译器、CMake ≥ 3.16、Ninja、Vulkan 开发包（如 Debian/Ubuntu 的 `libvulkan-dev`）与 Vulkan 驱动；测试另需 Python 3 与 `pytest` / `Pillow` / `numpy`。
+
+```bash
+git submodule update --init --recursive
+
+# 引擎（ncnn + Vulkan + CPU）
+scripts/engine-build.sh
+
+# 测试（默认取 bld/image-upscale，可用 IU_ENGINE 覆盖）
+python3 -m pytest tests -q
+```
+
+模型目录 `models/` 不入库：可手动放置，或安装 PowerShell 7 后执行 `pwsh scripts/fetch-models.ps1`。
+
 ## 模型获取
 
 ```powershell

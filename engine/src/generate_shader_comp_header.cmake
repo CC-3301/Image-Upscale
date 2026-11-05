@@ -15,7 +15,8 @@ get_filename_component(SHADER_SRC_NAME_WE ${SHADER_SRC} NAME_WE)
 # text to hex
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/${SHADER_SRC_NAME_WE}.text2hex.txt "${comp_data}")
 file(READ ${CMAKE_CURRENT_BINARY_DIR}/${SHADER_SRC_NAME_WE}.text2hex.txt comp_data_hex HEX)
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," comp_data_hex ${comp_data_hex})
+# char 可能是有符号的：显式 cast，否则 >0x7f 的字节在 C++11 下是 narrowing error（GCC/Clang 拒绝，MSVC 只告警）
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "(char)0x\\1," comp_data_hex ${comp_data_hex})
 string(FIND "${comp_data_hex}" "," tail_comma REVERSE)
 string(SUBSTRING "${comp_data_hex}" 0 ${tail_comma} comp_data_hex)
 

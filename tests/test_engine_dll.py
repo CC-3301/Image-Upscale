@@ -1,4 +1,4 @@
-"""工单 27：iu_engine.dll 的 P/Invoke 面冒烟（ctypes 直调，锁住 GUI 依赖的导出契约）
+"""工单 27：引擎动态库的 P/Invoke 面冒烟（ctypes 直调，锁住 GUI 依赖的导出契约）
 
 GUI（ImageUpscale.exe）经 DllImport 调用 iu_run(argc, argv, out_cb, err_cb, user)；
 本测试用同一签名直调，验证退出码、行协议（progress / -> done / done）与产物落盘。
@@ -10,12 +10,12 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from conftest import MODELS_DIR, REPO, make_png, needs_engine, run_engine
+from conftest import ENGINE_LIB, MODELS_DIR, REPO, make_png, needs_engine, run_engine
 
-DLL = Path(os.environ.get("IU_ENGINE_DLL", REPO / "bld" / "iu_engine.dll"))
+DLL = Path(os.environ.get("IU_ENGINE_DLL", REPO / "bld" / ENGINE_LIB))
 MODELS = MODELS_DIR  # 统一从 conftest 取（IU_MODELS 可覆盖）
 
-needs_dll = pytest.mark.skipif(not DLL.exists(), reason="iu_engine.dll not built")
+needs_dll = pytest.mark.skipif(not DLL.exists(), reason="engine library not built")
 
 LINE_CB = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_void_p)
 

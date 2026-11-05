@@ -16,11 +16,7 @@ public:
     RealESRGAN(int gpuid, int num_threads, bool tta_mode = false);
     ~RealESRGAN();
 
-#if _WIN32
     int load(const std::wstring& parampath, const std::wstring& modelpath);
-#else
-    int load(const std::string& parampath, const std::string& modelpath);
-#endif
 
     int process(const ncnn::Mat& inimage, ncnn::Mat& outimage) const;
 

@@ -1,4 +1,6 @@
 """命名规则与退出码（确定性断言）"""
+import os
+
 import pytest
 from PIL import Image
 
@@ -206,6 +208,7 @@ def test_no_rename_same_output_format_overwrites_source_in_place(workdir):
 
 
 @needs_engine
+@pytest.mark.skipif(os.name != "nt", reason="大小写不敏感的文件系统（NTFS）语义")
 def test_no_rename_same_format_uppercase_extension_overwrites_in_place(workdir):
     """扩展名大小写不同也指向同一个文件（Windows 不区分大小写），同样原地覆盖、不新增文件"""
     folder, inp, ref, p, _ = _run_in_place(workdir, "A.PNG")
@@ -361,6 +364,7 @@ def test_no_rename_folder_auto_picks_each_files_own_variant(workdir):
 
 
 @needs_engine
+@pytest.mark.skipif(os.name != "nt", reason="大小写不敏感的文件系统（NTFS）语义")
 def test_no_rename_cyrillic_case_variant_overwrites_in_place(workdir):
     """非 ASCII 文件名 + 两种拼写变体（NTFS 上同一个文件）→ 均原地覆盖，不新增文件。
 

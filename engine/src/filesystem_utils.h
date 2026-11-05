@@ -6,27 +6,15 @@
 #include <string>
 #include <algorithm>
 
+#include "iu_path.h"
+
 #if _WIN32
 #include <windows.h>
 #include "win32dirent.h"
 #else // _WIN32
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <unistd.h>
-#include <dirent.h>
+#include <filesystem>
 #endif // _WIN32
-
-#if __APPLE__
-#include <mach-o/dyld.h>
-#endif
-
-#if _WIN32
-typedef std::wstring path_t;
-#define PATHSTR(X) L##X
-#else
-typedef std::string path_t;
-#define PATHSTR(X) X
-#endif
 
 #if _WIN32
 static bool path_is_directory(const path_t& path)
@@ -63,33 +51,32 @@ static int list_directory(const path_t& dirpath, std::vector<path_t>& imagepaths
 #else // _WIN32
 static bool path_is_directory(const path_t& path)
 {
-    struct stat s;
-    if (stat(path.c_str(), &s) != 0)
-        return false;
-    return S_ISDIR(s.st_mode);
+    // POSIX 文件 API 只接受窄字符，统一转 UTF-8 后再交给 std::filesystem
+    std::error_code ec;
+    return std::filesystem::is_directory(std::filesystem::u8path(iu_utf8_encode(path)), ec);
 }
 
 static int list_directory(const path_t& dirpath, std::vector<path_t>& imagepaths)
 {
     imagepaths.clear();
 
-    DIR* dir = opendir(dirpath.c_str());
-    if (!dir)
+    std::error_code ec;
+    std::filesystem::directory_iterator it(std::filesystem::u8path(iu_utf8_encode(dirpath)), ec);
+    if (ec)
     {
         // 同上：不绕过引擎回调直接打印
         return -1;
     }
 
-    struct dirent* ent = 0;
-    while ((ent = readdir(dir)))
+    for (const std::filesystem::directory_entry& ent : it)
     {
-        if (ent->d_type != DT_REG && ent->d_type != DT_LNK)
+        std::error_code type_ec;
+        if (!ent.is_regular_file(type_ec) && !ent.is_symlink(type_ec))
             continue;
 
-        imagepaths.push_back(path_t(ent->d_name));
+        imagepaths.push_back(iu_utf8_decode(ent.path().filename().u8string()));
     }
 
-    closedir(dir);
     std::sort(imagepaths.begin(), imagepaths.end());
 
     return 0;
@@ -140,23 +127,23 @@ static path_t get_executable_directory()
 #else
 static path_t get_executable_directory()
 {
-    char filepath[256];
-    readlink("/proc/self/exe", filepath, 256);
+    char filepath[4096];
+    ssize_t n = readlink("/proc/self/exe", filepath, sizeof(filepath) - 1);
+    if (n <= 0)
+        return path_t();
+    filepath[n] = '\0';
 
     char* slash = strrchr(filepath, '/');
-    slash[1] = '\0';
+    if (slash)
+        slash[1] = '\0';
 
-    return path_t(filepath);
+    return iu_utf8_decode(filepath);
 }
 #endif
 
 static bool filepath_is_readable(const path_t& path)
 {
-#if _WIN32
-    FILE* fp = _wfopen(path.c_str(), L"rb");
-#else // _WIN32
-    FILE* fp = fopen(path.c_str(), "rb");
-#endif // _WIN32
+    FILE* fp = iu_fopen(path, "rb");
     if (!fp)
         return false;
 
