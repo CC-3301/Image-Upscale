@@ -130,19 +130,20 @@
             </StackPanel>
         </GroupBox>
 
-        <!-- 工单 67：新栏「文件处理」—— 产物命名与源文件去留（原「降噪与输出」行末的「文件添加扩展名」
-             携带新开关「删除输入文件」迁到此处；两者都是“输出到磁盘之后怎么处理文件”的策略，与模型/尺寸/
-             编码无关，合在一栏）。栏名备选过「格式处理」（已被本软件的「输出格式」占用，且删源文件不是格式
-             动作）与「文件命名与清理」；维护者 2026-09-20 定案为「文件处理」。
-             工单 68：「添加扩展名」自本票起**对文件夹输入同样生效且永不灰置**（撤销工单 50 定案 1）。
-             工单 69：「删除输入文件」= 产物写盘成功后删掉源文件（产物与输入同路径时跳过）。
-             同一实测口径下行宽 362px（两个开关）—— 远低于可用宽 720px，不换行。
-             两个下拉的项都不写在这里 —— 由 SettingsStore.SwitchLabels 填充（工单 41/42 的单一定义来源惯例） -->
+        <!-- 文件处理：产物命名与源文件去留。两个控件都与模型/尺寸/编码无关 ——
+             添加后缀（四态：开（两者）/开（文件夹）/开（文件）/关）决定段落在输出文件夹名还是产物文件名上；
+             删除输入文件开启后引擎在产物写盘成功时删掉源文件（产物与输入同路径即原地覆盖时跳过）。
+             两个下拉的项都不写在这里 —— 分别由 SettingsStore.AddSuffixLabels / SwitchLabels 填充（单一定义来源惯例）。
+             控件宽：添加后缀下拉 106px，由最长项「开（文件夹）」决定（6 个字 = 72px + 控件开销 28px，
+               与「降采样方式」同口径：100px 裁字、>106 无收益）。
+             行宽口径同「降噪与输出」注释（780×570 窗口 = MinWidth×MinHeight、读子控件矩形；可用宽 720px）：
+               按同口径推算本行两下拉约 366px（添加后缀 5 字 + 106px、删除输入文件 7 字 + 90px、组间 20px）；
+               再加入「序列化重命名」后约 560px ≤ 720px → 780px 最窄窗口下三个下拉同排不换行。 -->
         <GroupBox Grid.Row="4" Header="文件处理" Padding="8" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="添加扩展名：" VerticalAlignment="Center"/>
-                    <ComboBox x:Name="AddSuffixBox" Width="90" SelectionChanged="OnAddSuffixChanged"/>
+                    <TextBlock Text="添加后缀：" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="AddSuffixBox" Width="106" SelectionChanged="OnAddSuffixChanged"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="删除输入文件：" VerticalAlignment="Center" Margin="20,0,0,0"/>

@@ -83,11 +83,11 @@ public partial class MainWindow : Window
     // 工单 42：降采样滤镜的 token ↔ 标签表已移到 SettingsStore（单一定义来源）——
     // 原先定义在此处、由 SettingsStore 反向引用 MainWindow，依赖方向是颠倒的
 
-    // 工单 51：产物后缀段开关的用户选择（true = 开）。setting.ini 键 LastAddSuffix（1 = 开，与 v0.2.8 现状一致）。
-    // 工单 60：默认值引用 SettingsStore.DefaultAddSuffix（单一定义来源）
-    // 工单 68：本开关对文件夹输入同样生效且**永不灰置**（撤销工单 50 定案 1 的「文件夹固定为开」）——
-    // 输入框内容不再影响它，程序化设值只剩构造函数里的记忆值恢复一处，抑制标志随之取消
-    private bool _addSuffixEnabled = SettingsStore.DefaultAddSuffix;
+    // 添加后缀四态的用户选择（引擎 token：both/folder/file/none）。setting.ini 键 LastAddSuffix，
+    // 旧值 1/0 在读取时迁移成 both/none；默认值引用 SettingsStore.DefaultAddSuffixToken（单一定义来源）。
+    // 本控件对文件与文件夹输入都生效且**永不灰置**：输入框内容不影响它，程序化设值只剩构造函数里
+    // 的记忆值恢复一处，因此没有抑制标志
+    private string _addSuffix = SettingsStore.DefaultAddSuffixToken;
     // 工单 69：删除输入文件开关的用户选择（true = 开）。setting.ini 键 LastDeleteInput。
     // 语义：产物写盘成功后删掉源文件；产物与输入同路径（原地覆盖）时引擎侧跳过删除
     private bool _deleteInput = SettingsStore.DefaultDeleteInput;
@@ -109,22 +109,21 @@ public partial class MainWindow : Window
         // 不再在 XAML 里写死 ComboBoxItem（否则「界面文案 → 引擎 token」得再拍一次映射）
         foreach (var label in SettingsStore.OutputFormatLabels)
             FormatBox.Items.Add(label);
-        // 工单 51/68：产物后缀段开关（项由 SettingsStore.SwitchLabels 单一来源填充；与模型无关，
+        // 添加后缀四态（项由 SettingsStore.AddSuffixLabels 单一来源填充；与模型无关，
         // 故记忆值在构造函数这里读就定下来 —— OnLoaded/RestoreSettings 在 models 缺失时会早退，
-        // 若只在那里赋值，“关闭时写回”会拿初值把用户存的「关」抹成「开」）
-        foreach (var label in SettingsStore.SwitchLabels)
-        {
+        // 若只在那里赋值，“关闭时写回”会拿初值把用户存的值抹成默认）
+        foreach (var label in SettingsStore.AddSuffixLabels)
             AddSuffixBox.Items.Add(label);
-            DeleteInputBox.Items.Add(label); // 工单 69：删除输入文件开关，与上者共用同一份开/关表
-        }
+        foreach (var label in SettingsStore.SwitchLabels)
+            DeleteInputBox.Items.Add(label); // 删除输入文件开关的项仍走开/关表
         var s = SettingsStore.Load();
         // 工单 59：降采样滤镜的记忆值同样在此读定（理由同 51：RestoreSettings 在 models 缺失/
         // 清单为空时早退，只在那里赋值会让 OnClosing 拿初值 Lanczos 把用户存的 Box 抹掉）
         var dfIdx = Array.IndexOf(SettingsStore.DownFilterTokens, s.DownFilter);
         DownFilterBox.SelectedIndex = dfIdx >= 0 ? dfIdx : SettingsStore.DefaultDownFilterIndex;
-        _addSuffixEnabled = s.AddSuffix;
-        // 工单 68：开关恢复记忆值（SelectedIndex 在同值上触发一次 SelectionChanged，写回的就是刚读出的值）
-        AddSuffixBox.SelectedIndex = SettingsStore.SwitchIndexFrom(_addSuffixEnabled);
+        _addSuffix = s.AddSuffix;
+        // 恢复记忆值（SelectedIndex 触发的 SelectionChanged 写回的就是刚读出的值）
+        AddSuffixBox.SelectedIndex = SettingsStore.AddSuffixIndexFrom(_addSuffix);
         // 工单 69：删除输入文件开关同理（与模型无关 + OnClosing 无条件写回）
         _deleteInput = s.DeleteInput;
         DeleteInputBox.SelectedIndex = SettingsStore.SwitchIndexFrom(_deleteInput);
@@ -358,10 +357,10 @@ public partial class MainWindow : Window
         }
     }
 
-    // ---- 工单 51/68：产物后缀段开关；工单 69：删除输入文件开关 ----
-    // 两个开关都对文件与文件夹输入同样生效，且在任何输入状态下都可点（工单 68 撤销了工单 50 定案 1
-    // 的「文件夹/空/无效路径固定为开并灰置」）。下面的 SelectionChanged 只在用户点击与构造函数恢复
-    // 记忆值时触发，后者写回的就是刚读出的值，故不再需要抑制标志（工单 51 的 _suppressAddSuffixWrite 已删）
+    // ---- 添加后缀（四态下拉）；删除输入文件（开/关） ----
+    // 两者都对文件与文件夹输入同样生效，且在任何输入状态下都可点（不再按输入类型灰置）。
+    // 下面的 SelectionChanged 只在用户点击与构造函数恢复记忆值时触发，后者写回的就是刚读出的值，
+    // 故不需要抑制标志
 
     // 工单 62：「输入是否有效」的单一定义来源（发参前的合法性校验）—— 文件夹 / 空 / 无效路径均无效。
     // 工单 68 后「是不是文件」不再有第二个消费者（开关的灰置跟随已删），故 IsFileInput 内联到此
@@ -369,7 +368,7 @@ public partial class MainWindow : Window
         => !string.IsNullOrWhiteSpace(input) && (File.Exists(input) || Directory.Exists(input));
 
     private void OnAddSuffixChanged(object sender, SelectionChangedEventArgs e)
-        => _addSuffixEnabled = SettingsStore.SwitchEnabledFromIndex(AddSuffixBox.SelectedIndex, SettingsStore.DefaultAddSuffix);
+        => _addSuffix = SettingsStore.AddSuffixTokenAt(AddSuffixBox.SelectedIndex);
 
     private void OnDeleteInputChanged(object sender, SelectionChangedEventArgs e)
         => _deleteInput = SettingsStore.SwitchEnabledFromIndex(DeleteInputBox.SelectedIndex, SettingsStore.DefaultDeleteInput);
@@ -417,9 +416,9 @@ public partial class MainWindow : Window
         var m = _models[ModelBox.SelectedIndex];
         // 工单 27：参数走数组（P/Invoke wchar_t**），无需引号转义；--models-dir 由 GUI 显式传入
         var args = new List<string> { "-i", input, "-m", m.Id, "--models-dir", _modelsDir };
-        // 工单 50/68：关掉后缀段 → 产物用原文件名（不加后缀段）；工单 68 起对文件夹输入同样生效
-        if (!_addSuffixEnabled)
-            args.Add("--no-rename");
+        // 添加后缀四态：段落在输出文件夹名还是产物文件名上（引擎侧 --no-rename 是 none 的同义写法）
+        args.Add("--suffix");
+        args.Add(_addSuffix);
         // 工单 69：产物写盘成功后删除输入文件（引擎侧在产物与输入同路径时跳过删除）
         if (_deleteInput)
             args.Add("--delete-input");
@@ -589,8 +588,8 @@ public partial class MainWindow : Window
         // 工单 42：降采样滤镜（与模型无关，引擎缺失时也照样记录）
         s.DownFilter = SettingsStore.DownFilterTokenAt(DownFilterBox.SelectedIndex);
 
-        // 工单 51/68：后缀开关（同样与模型无关）
-        s.AddSuffix = _addSuffixEnabled;
+        // 添加后缀四态（同样与模型无关）
+        s.AddSuffix = _addSuffix;
 
         // 工单 69：删除输入文件开关（同样与模型无关）
         s.DeleteInput = _deleteInput;
@@ -631,8 +630,8 @@ public class SettingsStore
     // 工单 42：降采样滤镜 token（lanczos/catmullrom/bicubic/box；界面 Bicubic 的核是 Mitchell-Netravali）；
     // 默认项见 DefaultDownFilterIndex（工单 59）
     public string DownFilter = DownFilterTokens[DefaultDownFilterIndex];
-    // 工单 51/68：产物名是否带后缀段（true = 开，与 v0.2.8 现状一致；工单 68 起对文件与文件夹输入都生效）
-    public bool AddSuffix = DefaultAddSuffix;
+    // 添加后缀四态 token（both/folder/file/none）：段落在输出文件夹名上还是产物文件名上
+    public string AddSuffix = AddSuffixTokens[DefaultAddSuffixIndex];
     // 工单 69：产物写盘成功后是否删除输入文件（true = 开；setting.ini 键 LastDeleteInput）
     public bool DeleteInput = DefaultDeleteInput;
     // 工单 49：降噪档位记忆 —— Denoise 是档位齐备的模型共用的全局槽（LastDenoise；-1 = 自动）；
@@ -674,14 +673,34 @@ public class SettingsStore
     internal static string DownFilterTokenAt(int selectedIndex)
         => DownFilterTokens[selectedIndex >= 0 && selectedIndex < DownFilterTokens.Length ? selectedIndex : DefaultDownFilterIndex];
 
-    // 工单 51/68/69：开/关开关的项 ↔ 语义（**单一定义来源**，照 DownFilterTokens/Labels 模式；
-    // 「添加扩展名」与「删除输入文件」两个开关共用这一份表 —— 仓库里「开/关」字面量只此一处；
-    // 界面项由本表填充，序号 ↔ 布尔只经下面两个 helper，调项序不会静默反相）
+    // 添加后缀四态：界面标签 ↔ 引擎 token / setting.ini 值（**单一定义来源**，照 DownFilterTokens/Labels 模式；
+    // 界面项由本表填充，序号 ↔ token 只经下面的 helper，调项序不会静默换义）
+    internal static readonly string[] AddSuffixTokens = { "both", "folder", "file", "none" };
+    internal static readonly string[] AddSuffixLabels = { "开（两者）", "开（文件夹）", "开（文件）", "关" };
+
+    // 「默认开（两者）」的**单一定义来源**：字段初值、下拉未选中/越界回退、ini 缺键/非法值回退都指向它
+    internal const int DefaultAddSuffixIndex = 0;
+    internal static readonly string DefaultAddSuffixToken = AddSuffixTokens[DefaultAddSuffixIndex];
+
+    // 删除输入文件开关的项 ↔ 语义（「开/关」字面量只此一处；界面项由本表填充，
+    // 序号 ↔ 布尔只经下面两个 helper，调项序不会静默反相）
     internal static readonly string[] SwitchLabels = { "开", "关" };
 
-    // 工单 60：「添加扩展名默认开」的**单一定义来源** —— 字段初值、下拉未选中/越界回退、
-    // ini 缺键/非法值回退都引用它，默认值的字面量在仓库里只此一处（rg DefaultAddSuffix 可证）
-    internal const bool DefaultAddSuffix = true;
+    // setting.ini 的 LastAddSuffix → token：旧值 1/0 迁移（1 = 开（两者）、0 = 关），
+    // 缺键 / 非法值回退开（两者）
+    internal static string AddSuffixTokenFrom(string raw)
+    {
+        var token = raw == "1" ? "both" : raw == "0" ? "none" : raw;
+        return Array.IndexOf(AddSuffixTokens, token) >= 0 ? token : DefaultAddSuffixToken;
+    }
+
+    // 下拉选中项 → token（未选中/越界回退默认项）
+    internal static string AddSuffixTokenAt(int selectedIndex)
+        => AddSuffixTokens[selectedIndex >= 0 && selectedIndex < AddSuffixTokens.Length ? selectedIndex : DefaultAddSuffixIndex];
+
+    // ini 值 / token → 下拉序号
+    internal static int AddSuffixIndexFrom(string raw)
+        => Array.IndexOf(AddSuffixTokens, AddSuffixTokenFrom(raw));
 
     // 工单 69：「删除输入文件默认关」的单一定义来源（删除不可逆，默认必须关）
     internal const bool DefaultDeleteInput = false;
@@ -764,8 +783,8 @@ public class SettingsStore
             s.OutputExt = map.TryGetValue("LastOutputExt", out v) && Array.IndexOf(OutputFormatTokens, v) >= 0 ? v : OutputFormatTokens[DefaultOutputFormatIndex];
             s.OutputQuality = map.TryGetValue("LastOutputQuality", out v) && int.TryParse(v, out var q) ? q : -1;
             s.DownFilter = map.TryGetValue("LastDownFilter", out v) && Array.IndexOf(DownFilterTokens, v) >= 0 ? v : DownFilterTokens[DefaultDownFilterIndex];
-            // 工单 51：缺键/非法值静默回退默认「开」；v != "0" 是兼容 v0.2.8 以来的写法
-            s.AddSuffix = map.TryGetValue("LastAddSuffix", out v) ? v != "0" : DefaultAddSuffix;
+            // 添加后缀：旧值 1/0 迁移成 both/none，缺键/非法值静默回退开（两者）
+            s.AddSuffix = AddSuffixTokenFrom(map.TryGetValue("LastAddSuffix", out v) ? v : null);
             // 工单 69：只认 "1" 为开，其余（缺键 / 非法值）一律回退默认**关** —— 删除不可逆，
             // 不能像上面那样把任何非 "0" 的值（如 "abc"）当成开（评审 P1）
             s.DeleteInput = map.TryGetValue("LastDeleteInput", out v) ? v == "1" : DefaultDeleteInput;
@@ -814,7 +833,7 @@ public class SettingsStore
             sb.AppendLine($"LastOutputExt={s.OutputExt}");
             sb.AppendLine($"LastOutputQuality={s.OutputQuality}");
             sb.AppendLine($"LastDownFilter={s.DownFilter}");
-            sb.AppendLine($"LastAddSuffix={(s.AddSuffix ? 1 : 0)}");
+            sb.AppendLine($"LastAddSuffix={s.AddSuffix}");
             sb.AppendLine($"LastDeleteInput={(s.DeleteInput ? 1 : 0)}");
             // 工单 49：降噪记忆（全局槽 + 档位不齐模型各自的独立槽；键序稳定便于 diff/手改）
             sb.AppendLine($"LastDenoise={DenoiseTokenOfLevel(s.Denoise)}");
