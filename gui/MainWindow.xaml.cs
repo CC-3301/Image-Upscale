@@ -631,7 +631,7 @@ public class SettingsStore
     // 默认项见 DefaultDownFilterIndex（工单 59）
     public string DownFilter = DownFilterTokens[DefaultDownFilterIndex];
     // 添加后缀四态 token（both/folder/file/none）：段落在输出文件夹名上还是产物文件名上
-    public string AddSuffix = AddSuffixTokens[DefaultAddSuffixIndex];
+    public string AddSuffix = DefaultAddSuffixToken;
     // 工单 69：产物写盘成功后是否删除输入文件（true = 开；setting.ini 键 LastDeleteInput）
     public bool DeleteInput = DefaultDeleteInput;
     // 工单 49：降噪档位记忆 —— Denoise 是档位齐备的模型共用的全局槽（LastDenoise；-1 = 自动）；

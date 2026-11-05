@@ -654,6 +654,26 @@ static bool suffix_uses_folder(SuffixMode mode)
     return mode == SUFFIX_BOTH || mode == SUFFIX_FOLDER;
 }
 
+// 段是否落在产物文件名上（开（两者）/开（文件））。单文件输入没有输出文件夹可挂段，按这一条判：
+// 落文件名时写整段，开（文件夹）/关时产物 = 原文件名 + 输出格式扩展名
+static bool suffix_puts_segment_in_name(SuffixMode mode)
+{
+    return mode == SUFFIX_BOTH || mode == SUFFIX_FILE;
+}
+
+// 产物文件名是否补 -nN（段在文件名上时才补）：开（文件）恒补；开（两者）只在 AUTO 逐文件档位
+// 不一致时补；开（文件夹）/关的文件名永远干净；直通缩放不跑模型，不带降噪段。
+// run_files 与跑前撞车守卫共用这一处 —— 判据手抄两份时「只改一处」就是静默错名
+static std::wstring product_denoise_seg(SuffixMode suffix, bool direct_resize, bool denoise_per_file,
+                                        const std::wstring& file_denoise_seg)
+{
+    if (direct_resize || !suffix_puts_segment_in_name(suffix))
+        return std::wstring();
+    if (suffix == SUFFIX_BOTH && !denoise_per_file)
+        return std::wstring();
+    return file_denoise_seg;
+}
+
 // 运行期标量参数（工单 61）：构造一律具名赋值（工单 65），不依赖字段顺序
 // 类内初值取「未设置」语义：quality=-1 / run_scale=0 / target_value=0 均在各自合法域之外，
 // 漏填不会被当成有效值；tilesize=0 等于 CLI 的「自动」，down_filter 等于 CLI 默认的 Lanczos
@@ -734,7 +754,7 @@ static path_t single_file_outpath(const std::filesystem::path& in, const NamingS
                                   const std::wstring& file_denoise_seg, const path_t& file_ext,
                                   bool direct_resize, SuffixMode suffix)
 {
-    if (suffix == SUFFIX_FOLDER || suffix == SUFFIX_NONE)
+    if (!suffix_puts_segment_in_name(suffix))
         return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"." + file_ext));
     if (direct_resize)
         return iu_fs_path_w(in.parent_path() / iu_fs_path(iu_fs_path_w(in.stem()) + L"-(Resize)-" + naming.scale_seg + L"." + file_ext));
@@ -812,7 +832,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
     int infer_failures = 0;
     int io_failures = 0;
     // 开（文件夹）+ 单文件没有输出文件夹可挂段，产物就是源文件本身（同格式即原地覆盖）→ 结尾提示一句
-    bool overwrote_input = false;
+    path_t overwrote_input; // 空 = 没有发生原地覆盖；非空 = 被覆盖的那个输入路径
 
     auto advance_progress = [&]() {
         done++;
@@ -835,8 +855,12 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
     path_t cur_param, cur_bin;
     int cur_prepad = 0;
 
-    // 工单 70：本轮已写出的产物路径（规范化 + 大小写不敏感）→ 输入序号，防两个输入写同一路径
+    // 本轮已写出的产物路径（规范化 + 大小写不敏感）→ 输入序号，防两个输入写同一路径
     std::map<std::wstring, size_t, OrdinalLess> written;
+    // 本批输入的规范化路径 → 序号（运行期「产物撞上同批另一个输入」的判据，键与跑前守卫同一个）
+    std::map<std::wstring, size_t, OrdinalLess> input_index;
+    for (size_t k = 0; k < input_files.size(); k++)
+        input_index[canonical_path_key(input_files[k])] = k;
 
     for (int i = 0; i < total; i++)
     {
@@ -991,11 +1015,8 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         std::wstring file_denoise_seg = opt.denoise_auto
             ? (L"-n" + std::to_wstring(file_denoise))
             : naming.denoise_seg;
-        // 段写在产物文件名上时补本文件的 -nN：开（文件）恒补；开（两者）只在 AUTO 档位不一致时补
-        // （开（文件夹）的文件名永远干净）；直通缩放不跑模型，不带降噪段
-        std::wstring name_denoise_seg;
-        if (use_engine && (opt.suffix == SUFFIX_FILE || (opt.suffix == SUFFIX_BOTH && denoise_per_file)))
-            name_denoise_seg = file_denoise_seg;
+        const std::wstring name_denoise_seg =
+            product_denoise_seg(opt.suffix, !use_engine, denoise_per_file, file_denoise_seg);
         path_t outpath;
         if (single_file)
         {
@@ -1007,11 +1028,20 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             outpath = dir_product_path(output_files[i], naming, name_denoise_seg, file_fmt.ext, !use_engine, opt.suffix);
         }
 
-        // 工单 70：本轮的产物路径又出现（如 AUTO 逐文件档位下两个同名输入解析出同一档位）→ 拒绝写盘、按 IO 失败计。跑前的守卫能盖住大部分情形，但「逐文件档位在运行期才定」那一路盖不住，
-        // 而静默覆盖的代价是丢产物且日志两行都显示成功（源图也不会被删 —— 走不到删除那一步）。
-        // 每个序号只过一次本循环，故命中即必是别的输入写的（无需再比序号）
+        // 运行期守卫：产物名在跑前算不准的那几路由这里兜底，两条判据与跑前守卫同口径，
+        // 命中都拒绝写盘、按 IO 失败计（静默覆盖的代价是产物被丢、或源图未处理就被盖掉，日志却两行都成功）。
+        //   ① 产物撞上**同批另一个输入文件** —— 跑前守卫在「逐文件档位」与「开（文件）+ 目标尺寸」
+        //      两路整块跳过，这里补上；
+        //   ② 产物与**已写出的产物**同路 —— 如 AUTO 逐文件档位下两个同名输入解析出同一档位。
+        // 每个序号只过一次本循环：①比序号即排除「产物覆盖自己」，②命中即必是别的输入写的。
         {
             const std::wstring key = canonical_path_key(outpath);
+            auto in_it = input_index.find(key);
+            if (in_it != input_index.end() && in_it->second != (size_t)i)
+            {
+                fail(false, "output path is another input file", outpath);
+                continue;
+            }
             if (written.find(key) != written.end())
             {
                 fail(false, "output path already written by another input", outpath);
@@ -1233,7 +1263,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8，工单 17）
         log_out("%s -> %s done\n", iu_to_utf8(inpath).c_str(), iu_to_utf8(outpath).c_str());
         if (single_file && opt.suffix == SUFFIX_FOLDER && path_equal_ci(outpath, inpath))
-            overwrote_input = true;
+            overwrote_input = inpath;
 
         // 工单 69：删除输入文件 —— 只在**本文件产物写盘成功之后**执行（上面的 save_ok 分支不通过
         // 就 continue 了，源图因此不会被删）；产物与输入同路径（原地覆盖，工单 58）时跳过删除，
@@ -1267,8 +1297,8 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
     log_out("done\n");
 
     // 覆盖不可撤销，按四态口径在输出日志最末尾提示（只在确实原地覆盖时出现）
-    if (overwrote_input)
-        log_out("output overwrote the input file: %s\n", iu_to_utf8(input_files[0]).c_str());
+    if (!overwrote_input.empty())
+        log_out("output overwrote the input file: %s\n", iu_to_utf8(overwrote_input).c_str());
 
     if (infer_failures > 0)
     {
@@ -1563,8 +1593,6 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     // 低/中/高写 -n1/2/3；直通缩放不跑模型，永不写该段
     std::wstring denoise_seg = L"-n" + std::to_wstring(denoise_level);
 
-    // 命名段与运行参数各打包一次（工单 61/65）：一律具名赋值，C++17 无指定初始化器，
-    // 花括号实参表在换序/中途插字段时相邻同类型字段会静默错位且编译器不报错
     const NamingSegments naming = [&] {
         NamingSegments n;
         n.display = wdisplay;
@@ -1686,15 +1714,15 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 产物而被放大两轮；配 --delete-input 更会连源图一起消失（两张源图都被删、只剩一张产物）。
         // 与工单 58 的「产物覆盖自己」（同一文件）不冲突：那种情况 index 相同，两条都放行。
         // 逐文件档位（AUTO 档位不一致）时产物名在运行期才定 → 这一路跳过跑前检查，由 run_files 的
-        // 运行期守卫（同一个 canonical 键）兜住；开（文件）在目标尺寸模式下逐文件才知走 SR 还是直通缩放
-        // （产物名分别是 -(模型名)-… 与 -(Resize)-…），跑前同样算不准 → 一并交给运行期守卫。
+        // 运行期守卫兜住（同一个 canonical 键，产物撞输入与产物撞产物两条都判）；开（文件）在目标尺寸
+        // 模式下逐文件才知走 SR 还是直通缩放（产物名分别是 -(模型名)-… 与 -(Resize)-…），跑前同样算不准。
         const bool name_unknown_before_run = denoise_per_file || (suffix == SUFFIX_FILE && target_mode);
         if (!name_unknown_before_run)
         {
-            // 与 run_files 同口径：段在文件夹名上时文件名不带降噪段；开（文件）的段在文件名上，
-            // 档位段取本批口径（非 AUTO 用 denoise_seg，AUTO 全批同档用 dir_denoise_seg）
-            const std::wstring guard_denoise_seg =
-                (suffix == SUFFIX_FILE) ? (denoise_auto ? dir_denoise_seg : denoise_seg) : std::wstring();
+            // 判据与 run_files 共用 product_denoise_seg；档位段取本批口径
+            // （非 AUTO 用 denoise_seg，AUTO 全批同档用 dir_denoise_seg）
+            const std::wstring guard_denoise_seg = product_denoise_seg(
+                suffix, false, denoise_per_file, denoise_auto ? dir_denoise_seg : denoise_seg);
             auto product_path = [&](size_t i) {
                 return dir_product_path(output_files[i], naming, guard_denoise_seg,
                                         output_format_of(input_files[i], format_same, format).ext,
@@ -1842,10 +1870,6 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     // ---- 按架构创建引擎并执行循环 ----
     int rc = EXIT_OK;
 
-    // 工单 65：具名赋值（IIFE 取返回值以保留 const）；漏填由类内初值兜底：
-    // quality=-1 / run_scale=0 / target_value=0 是各自合法域以外的「未设置」哨兵；
-    // tilesize=0 与 down_filter=RF_LANCZOS3 本就是 CLI 的「自动」与默认 Lanczos（漏填即静默取默认值）；
-    // format 空串既非哨兵也无人校验，会落进 WebP 分支，不报错
     const RunOptions opt = [&] {
         RunOptions o;
         o.format = format;

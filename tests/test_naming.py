@@ -91,15 +91,17 @@ def test_progress_lines_on_stdout(workdir):
 # ---- 工单 50/68：关闭后缀段（--no-rename）—— 工单 68 起对文件与文件夹输入都生效 ----
 
 @needs_engine
-def test_no_rename_file_input_uses_original_name(workdir):
-    """文件输入 + --no-rename：产物 = 源文件同目录 + 原文件名 + 输出格式扩展名（无任何后缀段）"""
+@pytest.mark.parametrize("flag", [("--no-rename",), ("--suffix", "none")], ids=["no-rename", "suffix-none"])
+def test_no_rename_file_input_uses_original_name(workdir, flag):
+    """关闭后缀段（`--no-rename` 与 `--suffix none` 两种写法）：产物 = 源文件同目录 + 原文件名 +
+    输出格式扩展名（无任何后缀段）"""
     folder = workdir / "B"
     folder.mkdir()
     inp = folder / "A.png"
     make_png(inp)
     before = inp.read_bytes()
 
-    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--no-rename"])
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", *flag])
     assert p.returncode == 0, p.stderr
     assert (folder / "A.jpg").exists()
     # 目录内只有源图与产物：没有带 -(模型名)-nN-<倍率> 段的第二个产物
@@ -220,14 +222,15 @@ def test_no_rename_same_format_uppercase_extension_overwrites_in_place(workdir):
 
 
 @needs_engine
-def test_no_rename_folder_input_writes_next_to_sources(workdir):
+@pytest.mark.parametrize("flag", [("--no-rename",), ("--suffix", "none")], ids=["no-rename", "suffix-none"])
+def test_no_rename_folder_input_writes_next_to_sources(workdir, flag):
     """工单 68：关后缀段对目录输入同样生效 —— 产物 = 源文件同目录 + 原文件名 + 输出格式扩展名，
     不再另建 B-(模型名)-nN-<倍率>/ 输出目录（撤销工单 50 定案 1 的「目录模式忽略该开关」）"""
     folder = workdir / "B"
     folder.mkdir()
     make_png(folder / "p001.png")
 
-    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--no-rename"])
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", *flag])
     assert p.returncode == 0, p.stderr
     assert (folder / "p001.jpg").exists()
     assert not (workdir / f"B-{MODEL_TAG}-n0-2.0x").exists()
@@ -484,36 +487,6 @@ def test_suffix_folder_single_file_no_warning_when_product_is_new_file(workdir):
 
 
 @needs_engine
-def test_suffix_none_single_file_keeps_original_name(workdir):
-    """关 + 单文件：产物 = 源文件同目录 + 原文件名 + 输出格式扩展名（无任何后缀段）"""
-    folder = workdir / "B"
-    folder.mkdir()
-    inp = folder / "A.png"
-    make_png(inp)
-
-    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--suffix", "none"])
-    assert p.returncode == 0, p.stderr
-    assert _names(folder) == ["A.jpg", "A.png"]
-
-
-@needs_engine
-def test_no_rename_is_synonym_of_suffix_none(workdir):
-    """`--no-rename` 与 `--suffix none` 同义：产物路径与字节一致"""
-    products = {}
-    for tag, extra in (("no-rename", ["--no-rename"]), ("suffix-none", ["--suffix", "none"])):
-        folder = workdir / tag
-        folder.mkdir()
-        inp = folder / "A.png"
-        make_png(inp)
-        p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", *extra])
-        assert p.returncode == 0, (tag, p.stderr)
-        products[tag] = {x.name: x.read_bytes() for x in folder.iterdir()}
-
-    assert products["no-rename"].keys() == products["suffix-none"].keys() == {"A.png", "A.jpg"}, products
-    assert products["no-rename"] == products["suffix-none"]
-
-
-@needs_engine
 def test_suffix_both_folder_input_matches_default_naming(workdir):
     """开（两者，默认）：产物进同级输出文件夹，内部文件名原样镜像（无段）"""
     folder = workdir / "manga"
@@ -552,19 +525,6 @@ def test_suffix_file_folder_input_writes_segment_into_filename(workdir):
     p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--suffix", "file"])
     assert p.returncode == 0, p.stderr
     assert _names(folder) == [f"p001-{MODEL_TAG}-n0-2.0x.png", "p001.png"]
-    assert not (workdir / f"manga-{MODEL_TAG}-n0-2.0x").exists()
-
-
-@needs_engine
-def test_suffix_none_folder_input_writes_next_to_sources(workdir):
-    """关：整树原地生成同名产物，不建输出目录"""
-    folder = workdir / "manga"
-    folder.mkdir()
-    make_png(folder / "p001.png")
-
-    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "none"])
-    assert p.returncode == 0, p.stderr
-    assert _names(folder) == ["p001.jpg", "p001.png"]
     assert not (workdir / f"manga-{MODEL_TAG}-n0-2.0x").exists()
 
 
