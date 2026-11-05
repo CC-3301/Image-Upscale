@@ -91,6 +91,9 @@ public partial class MainWindow : Window
     // 工单 69：删除输入文件开关的用户选择（true = 开）。setting.ini 键 LastDeleteInput。
     // 语义：产物写盘成功后删掉源文件；产物与输入同路径（原地覆盖）时引擎侧跳过删除
     private bool _deleteInput = SettingsStore.DefaultDeleteInput;
+    // 序列化重命名开关的用户选择（true = 开）。setting.ini 键 LastSeqRename，缺键/非法值回退「关」。
+    // 语义：产物名主干换成按现有文件名自然序发的 001/002/…，源文件名不变
+    private bool _sequenceRename = SettingsStore.DefaultSequenceRename;
 
     public MainWindow()
     {
@@ -115,7 +118,10 @@ public partial class MainWindow : Window
         foreach (var label in SettingsStore.AddSuffixLabels)
             AddSuffixBox.Items.Add(label);
         foreach (var label in SettingsStore.SwitchLabels)
+        {
             DeleteInputBox.Items.Add(label); // 删除输入文件开关的项仍走开/关表
+            SequenceRenameBox.Items.Add(label);
+        }
         var s = SettingsStore.Load();
         // 工单 59：降采样滤镜的记忆值同样在此读定（理由同 51：RestoreSettings 在 models 缺失/
         // 清单为空时早退，只在那里赋值会让 OnClosing 拿初值 Lanczos 把用户存的 Box 抹掉）
@@ -127,6 +133,9 @@ public partial class MainWindow : Window
         // 工单 69：删除输入文件开关同理（与模型无关 + OnClosing 无条件写回）
         _deleteInput = s.DeleteInput;
         DeleteInputBox.SelectedIndex = SettingsStore.SwitchIndexFrom(_deleteInput);
+        // 序列化重命名开关同理
+        _sequenceRename = s.SequenceRename;
+        SequenceRenameBox.SelectedIndex = SettingsStore.SwitchIndexFrom(_sequenceRename);
         // 工单 71：输出格式的记忆值在构造函数读定（与 DownFilter / AddSuffix / Denoise 同款，工单 59 口径）——
         // 本控件在 OnClosing 是无条件写回，而 RestoreSettings 在 models 缺失/清单为空时早退，
         // 只在那里赋值会让「关窗写回」拿 -1（未选中）或初值把用户存的 png/webp/same 抹成 jpg
@@ -357,8 +366,8 @@ public partial class MainWindow : Window
         }
     }
 
-    // ---- 添加后缀（四态下拉）；删除输入文件（开/关） ----
-    // 两者都对文件与文件夹输入同样生效，且在任何输入状态下都可点（不再按输入类型灰置）。
+    // ---- 添加后缀（四态下拉）；删除输入文件、序列化重命名（开/关） ----
+    // 三者都对文件与文件夹输入同样生效，且在任何输入状态下都可点（不再按输入类型灰置）。
     // 下面的 SelectionChanged 只在用户点击与构造函数恢复记忆值时触发，后者写回的就是刚读出的值，
     // 故不需要抑制标志
 
@@ -372,6 +381,9 @@ public partial class MainWindow : Window
 
     private void OnDeleteInputChanged(object sender, SelectionChangedEventArgs e)
         => _deleteInput = SettingsStore.SwitchEnabledFromIndex(DeleteInputBox.SelectedIndex, SettingsStore.DefaultDeleteInput);
+
+    private void OnSequenceRenameChanged(object sender, SelectionChangedEventArgs e)
+        => _sequenceRename = SettingsStore.SwitchEnabledFromIndex(SequenceRenameBox.SelectedIndex, SettingsStore.DefaultSequenceRename);
 
     private void OnBrowse(object sender, RoutedEventArgs e)
     {
@@ -422,6 +434,9 @@ public partial class MainWindow : Window
         // 工单 69：产物写盘成功后删除输入文件（引擎侧在产物与输入同路径时跳过删除）
         if (_deleteInput)
             args.Add("--delete-input");
+        // 序列化重命名：产物名主干换成按自然序发的编号（引擎侧每目录各自从 001 起）
+        if (_sequenceRename)
+            args.Add("--sequence");
 
         if (ModeScale.IsChecked == true)
         {
@@ -532,7 +547,7 @@ public partial class MainWindow : Window
                 Dispatcher.Invoke(() =>
                 {
                     if (line.StartsWith("inference failed: ") || line.StartsWith("decode image failed: ")
-                        || line.StartsWith("encode image failed: "))
+                        || line.StartsWith("encode image failed: ") || line.StartsWith("cannot write output: "))
                         Log("✘ 失败：" + line[(line.IndexOf(':') + 2)..]);
                     else
                         Log(line);
@@ -594,6 +609,9 @@ public partial class MainWindow : Window
         // 工单 69：删除输入文件开关（同样与模型无关）
         s.DeleteInput = _deleteInput;
 
+        // 序列化重命名开关（同样与模型无关）
+        s.SequenceRename = _sequenceRename;
+
         // 工单 49：降噪记忆 —— 全局槽写当前值，独立槽按已加载模型清单生成（没被用户碰过的模型
         // 写其默认档，键因此在 setting.ini 里总是可见）；键名按 ini 语法回读
         // （见 SettingsStore.IsDenoiseModelIdStorable）
@@ -634,6 +652,8 @@ public class SettingsStore
     public string AddSuffix = DefaultAddSuffixToken;
     // 工单 69：产物写盘成功后是否删除输入文件（true = 开；setting.ini 键 LastDeleteInput）
     public bool DeleteInput = DefaultDeleteInput;
+    // 序列化重命名开关（true = 开；setting.ini 键 LastSeqRename）
+    public bool SequenceRename = DefaultSequenceRename;
     // 工单 49：降噪档位记忆 —— Denoise 是档位齐备的模型共用的全局槽（LastDenoise；-1 = 自动）；
     // DenoiseByModel 是档位不齐的模型各自的独立槽（LastDenoise_<modelId>；无键 = 无记录 → 回退默认档）
     public int Denoise = -1;
@@ -704,6 +724,9 @@ public class SettingsStore
 
     // 工单 69：「删除输入文件默认关」的单一定义来源（删除不可逆，默认必须关）
     internal const bool DefaultDeleteInput = false;
+
+    // 「序列化重命名默认关」的单一定义来源（字段初值、ini 缺键/非法值回退都指向它）
+    internal const bool DefaultSequenceRename = false;
 
     // 下拉当前选中项 → 开关值：指到表内的项（0 = 开 / 1 = 关）按表判，**未选中/越界才回退
     // 调用方给的 fallback**（即各自的 Default*）—— 回退分支不吞合法项，默认值翻转也不改表内语义。
@@ -788,6 +811,8 @@ public class SettingsStore
             // 工单 69：只认 "1" 为开，其余（缺键 / 非法值）一律回退默认**关** —— 删除不可逆，
             // 不能像上面那样把任何非 "0" 的值（如 "abc"）当成开（评审 P1）
             s.DeleteInput = map.TryGetValue("LastDeleteInput", out v) ? v == "1" : DefaultDeleteInput;
+            // 序列化重命名：同样只认 "1" 为开，缺键 / 非法值回退默认**关**
+            s.SequenceRename = map.TryGetValue("LastSeqRename", out v) ? v == "1" : DefaultSequenceRename;
 
             // 工单 49：降噪记忆（全局槽缺键/非法值 → 默认「自动」；独立槽的非法条目丢弃 → 该模型回退默认档）
             s.Denoise = map.TryGetValue("LastDenoise", out v) ? DenoiseLevelOfToken(v) : -1;
@@ -835,6 +860,7 @@ public class SettingsStore
             sb.AppendLine($"LastDownFilter={s.DownFilter}");
             sb.AppendLine($"LastAddSuffix={s.AddSuffix}");
             sb.AppendLine($"LastDeleteInput={(s.DeleteInput ? 1 : 0)}");
+            sb.AppendLine($"LastSeqRename={(s.SequenceRename ? 1 : 0)}");
             // 工单 49：降噪记忆（全局槽 + 档位不齐模型各自的独立槽；键序稳定便于 diff/手改）
             sb.AppendLine($"LastDenoise={DenoiseTokenOfLevel(s.Denoise)}");
             foreach (var kv in s.DenoiseByModel.OrderBy(kv => kv.Key, StringComparer.Ordinal))
