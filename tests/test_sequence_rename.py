@@ -216,9 +216,10 @@ def test_delete_input_before_rename_keeps_product_when_source_name_matches_targe
     folder.mkdir()
     make_png(folder / "001.png", size=(32, 32))
 
-    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none", "--delete-input"])
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "-v", "--sequence", "--suffix", "none", "--delete-input"])
     assert p.returncode == 0, p.stderr
     assert sorted(x.name for x in folder.iterdir()) == ["001.png"]
+    assert "input kept (output overwrites it)" in p.stderr  # 真走了同路径跳过分支
     with Image.open(folder / "001.png") as img:
         img.load()
         assert img.size == (64, 64)

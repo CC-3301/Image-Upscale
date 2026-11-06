@@ -57,8 +57,8 @@ def _open_shared_rw(path):
 
 
 @needs_engine
-def test_delete_input_removes_source_after_output_is_written(workdir):
-    """单文件 + 异格式：产物 A.jpg 写出后源图 A.png 消失（退出码 0）"""
+def test_delete_input_removes_source_after_temp_write_before_rename(workdir):
+    """单文件 + 异格式：产物写成完整 tmp 后、改名成目标前源图 A.png 被删（退出码 0）"""
     folder = workdir / "B"
     folder.mkdir()
     inp = folder / "A.png"
@@ -227,3 +227,27 @@ def test_delete_input_runs_before_rename_and_keeps_the_temp_file(workdir):
     tmp = folder / "A.jpg.iu-tmp"
     assert str(tmp) in p.stderr  # 临时文件的完整路径写进日志
     assert Image.open(tmp).size == (128, 128)
+
+
+@needs_engine
+def test_write_failure_keeps_source_and_leaves_no_temp_file(workdir):
+    """写盘失败（临时名被一个目录占住）：源图仍在、退出码 3、目录里不留 `.iu-tmp`
+
+    删源在写盘成功之后：写盘没成功就不删源，源图原样保留；写盘失败分支负责清掉临时文件
+    （这里是占位目录，引擎删得掉就自己删，删不掉由本用例收尾后再断言没留下东西）。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)
+    blocker = folder / "A.jpg.iu-tmp"
+    blocker.mkdir()  # 占住临时名，让 _wfopen(..., L"wb") 必然失败
+
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--no-rename", "--delete-input"])
+    if blocker.exists():
+        blocker.rmdir()
+
+    assert p.returncode == 3, (p.returncode, p.stderr)
+    assert "cannot write output" in p.stderr, p.stderr
+    assert inp.exists()  # 写盘失败，删源那一步根本没走到
+    assert not [x for x in folder.iterdir() if ".iu-tmp" in x.name]

@@ -100,8 +100,8 @@ static void print_usage()
     log_out("                       folder / file / none (folder = only the output folder name,\n");
     log_out("                       file = only the product file name, none = no segment)\n");
     log_out("  --no-rename          same as --suffix none: name the output after the input file\n");
-    log_out("  --delete-input       delete the input file after its output is written\n");
-    log_out("                       (skipped when the output overwrites the input itself)\n");
+    log_out("  --delete-input       delete the input file after its output is written to a temp file,\n");
+    log_out("                       before the rename (skipped when the output overwrites the input)\n");
     log_out("  --sequence           name the products 001, 002, ... in each folder's natural order\n");
     log_out("                       (3-digit padding, more digits past 999; source names never change)\n");
     log_out("  -v                   verbose output\n");
@@ -698,7 +698,7 @@ struct RunOptions
     bool denoise_auto = false;
     bool verbose = false;
     SuffixMode suffix = SUFFIX_BOTH; // 四态：段落在输出文件夹名上还是产物文件名上
-    bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件（产物与输入同路径时跳过）
+    bool delete_input = false; // 写成完整 tmp 后、改名成目标前删除（源与目标同路径时跳过）
     bool format_same = false;  // 工单 71：输出格式跟随每个输入自己的格式（扩展名保留输入拼写）
     bool sequence = false;     // 序列化重命名：产物名主干换成按自然序发的 001/002/…
 };
@@ -1350,15 +1350,15 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             write_ok = webp_rc == 1;
         }
 
-        // 编码失败与写盘失败都要清掉已写出的临时文件：磁盘满 / 无权限时可能已落下半截字节；
-        // 成功时 rename 已把它带走。改名失败不清 —— 那时临时文件是完整产物（见下）
+        // 写盘失败要清掉可能已落下的半截临时文件：磁盘满 / 无权限时会写出残文件；
+        // 编码是纯内存操作、没写过 tmp，此时不动它（那里可能是上次崩掉留下的完整产物）；
+        // 成功时 rename 已把 tmp 带走。改名失败不清 —— 那时临时文件是完整产物（见下）
         auto discard_temp = [&]() {
             std::error_code rec;
             std::filesystem::remove(iu_fs_path(tmppath), rec);
         };
         if (!encode_ok)
         {
-            discard_temp();
             fail(false, "encode image failed", outpath);
             continue;
         }
@@ -1371,7 +1371,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         }
         // 删除输入文件 —— 在改名之前执行：改名失败时源已删，完整产物仍留在临时文件里（路径写进日志）。
         // 产物与输入同路径（原地覆盖）时跳过删除，否则删掉的就是马上要被覆盖的那个文件。
-        // 删除失败计入 IO 失败并继续处理后续文件：源图保持原样，产物照常改名落地。
+        // 删除失败只计入 IO 失败、不中断：当前文件照常改名落地，源图保持原样。
         if (opt.delete_input)
         {
             if (path_equal_ci(outpath, inpath))
@@ -1454,7 +1454,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
     int denoise_level = 0;
     int down_filter = RF_LANCZOS3; // 工单 42：降采样滤镜，默认 Lanczos
     SuffixMode suffix = SUFFIX_BOTH; // 四态：段落在输出文件夹名上还是产物文件名上（默认两者）
-    bool delete_input = false; // 工单 69：产物写盘成功后删除输入文件
+    bool delete_input = false; // 写成完整 tmp 后、改名成目标前删除
     bool sequence = false;     // 序列化重命名：产物名主干换成按自然序发的编号
     bool denoise_auto = false; // AUTO：按文件伪影估计自动选档（工单 06）
     int verbose = 0;
