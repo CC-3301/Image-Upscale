@@ -60,6 +60,13 @@
 - **教训**：给「同路径覆盖」开绿灯前，先把「输入何时读完、写盘何时发生、中途是否重读」三件事在代码里逐行确认，并把结论写进调用点注释——这是该不变量在仓库里的唯一落点。
 - **守卫**：`tests/test_naming.py` 的原地覆盖用例（退出码 0 + 尺寸/格式 + 与参考产物的 PSNR 内容判据）。
 
+### 1.9 写盘走「临时文件 + rename」会改写目录项拼写（工单 73）
+
+- **现象**：`A.PNG` 配 `-f png`、产物落到源文件本身时，处理完文件名变成 `A.png`；内容与尺寸都对。相关用例带 `skipif os.name != "nt"`，在 Linux 门禁里被跳过，整套测试仍是绿的。
+- **根源**：写盘从「直接写目标」改成「写 `<目标名>.iu-tmp` 再 rename」；Windows 的 rename 以**源文件名**落地，目标目录项被改写成本次计算出的 outpath 拼写（`-f png` 把扩展名规范成小写）。NTFS 大小写不敏感，仍是同一个文件，但用户看到的名字被改了。
+- **教训**：改文件系统操作前先问「这条路径在大小写不敏感的系统上落到哪个目录项」；带 `skipif os.name != "nt"` 的用例在 Linux 门禁里等于不存在，涉及平台语义的改动必须在对应平台跑一遍。
+- **守卫**：`tests/test_naming.py::test_no_rename_same_format_uppercase_extension_overwrites_in_place`、`test_no_rename_cyrillic_case_variant_overwrites_in_place`、`tests/test_delete_input.py::test_delete_input_skipped_for_uppercase_extension_overwrite`；引擎侧 `case_variant_entry_name()` 在改名落地前取盘上真实目录项名，仅「同名、仅拼写不同」时替换，目标是指向别处的符号链接则不动。
+
 ## 2. GUI（WPF）
 
 ### 2.1 经典主题渲染下控件文字顶对齐（工单 12）
@@ -171,6 +178,7 @@
 构建与发布的依赖，脚本会自动探测，勿手写编译命令：
 
 - **引擎**：VS2022（C++ 桌面开发 + "C++ CMake 工具"组件）与 Vulkan SDK → `scripts\engine-build.bat` 经 vswhere 自动定位；便携/非标准 VS 安装（vswhere 查不到）设环境变量 `IU_VS_PATH`，cmake 异常另设 `IU_CMAKE`
+- **Windows SDK 与 MSVC 是两件事**：便携 / 解压版 VS 布局只有编译器，不含 `windows.h` 等 Windows 头与库，`cl` 会报 C1083 找不到 `windows.h`。装 Windows SDK（`winget install --id Microsoft.WindowsSDK.10.0.26100`，或官网 winsdksetup.exe）后 `vcvars64.bat` 自动并入 INCLUDE/LIB，无需额外环境变量
 - **GUI**：.NET 8 SDK → `package.ps1` 自动探测（`IU_DOTNET` > PATH > 常见位置，以 `--list-sdks` 验证 8.x）
 - **发布**：`powershell -ExecutionPolicy Bypass -File scripts\package.ps1 -Version vX.Y.Z`（零删除，输出 `dist\vX.Y.Z\`）
 
