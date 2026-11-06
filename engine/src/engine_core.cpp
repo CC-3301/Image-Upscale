@@ -812,6 +812,28 @@ static bool path_equal_ci(const path_t& a, const path_t& b)
     return !less(ka, kb) && !less(kb, ka); // 等价 = 互不小于
 }
 
+// 目标路径已存在、且它与 p 的文件名只有拼写（大小写）不同时，返回盘上的真实目录项名；否则返回空串。
+// 用途：rename 以源名为准落地，若目标已存在（原地覆盖源文件、覆盖上一轮产物），直接把 tmp 改名
+// 成计算出的 outpath 会把目录项改写成 outpath 的拼写 —— NTFS 大小写不敏感，A.PNG 配 `-f png`
+// 时 outpath 是 A.png，同一个文件的名字却会被改写成 A.png。weakly_canonical 会把已存在的部分解析回
+// 真实大小写（与路径比较用同一口径，见 canonical_path_key）。
+// 只认「同一名字、仅拼写不同」：名字实质不同时（如目标是指向别处的符号链接）不动，避免顺着链接
+// 把产物写到另一个文件上。
+static path_t case_variant_entry_name(const path_t& p)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(iu_fs_path(p), ec) || ec)
+        return path_t();
+    const std::filesystem::path resolved = std::filesystem::weakly_canonical(iu_fs_path(p), ec);
+    if (ec)
+        return path_t();
+    const path_t actual = iu_fs_path_w(resolved.filename());
+    const path_t want = iu_fs_path_w(iu_fs_path(p).filename());
+    const OrdinalLess less;
+    const bool same_ci = !less(actual, want) && !less(want, actual);
+    return (same_ci && actual != want) ? actual : path_t();
+}
+
 // 序列化重命名的产物名主干：目录内按自然序从 001 起编号，3 位补零，序号超过 999 时自然变 4 位
 static std::wstring sequence_stem(int index)
 {
@@ -1395,9 +1417,14 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             }
         }
         // 改名成目标：同一目录内 rename，不跨盘搬运。失败时目标保持原样，临时文件保留（内容是完整
-        // 产物，路径写进日志供手工恢复），该文件按 IO 失败计
+        // 产物，路径写进日志供手工恢复），该文件按 IO 失败计。
+        // 目标已存在时改到它在盘上的真实名字上：否则原地覆盖会把源文件目录项的拼写改成本次 outpath
+        // 的拼写（A.PNG + 同格式 → A.png），用户看到的名字被改而内容无误。
         {
             std::error_code rec;
+            const path_t realname = case_variant_entry_name(outpath);
+            if (!realname.empty())
+                outpath = iu_fs_path_w(iu_fs_path(outpath).parent_path() / iu_fs_path(realname));
             std::filesystem::rename(iu_fs_path(tmppath), iu_fs_path(outpath), rec);
             if (rec)
             {
