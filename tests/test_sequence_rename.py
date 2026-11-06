@@ -166,11 +166,11 @@ def test_output_goes_through_a_temp_file_then_rename(workdir):
 
 
 @needs_engine
-def test_rename_failure_cleans_up_the_written_temp_file(workdir):
-    """改名失败（目标路径被一个目录占住）：退出码 3、目标保持原样、已写出的临时文件被清掉
+def test_rename_failure_keeps_the_temp_file_and_logs_its_path(workdir):
+    """改名失败（目标路径被一个目录占住）：退出码 3、目标保持原样、完整产物留在 `<目标名>.iu-tmp`
 
-    若改成直接写目标，这里会把图片写进那个目录或留下半截图；走临时文件则失败只发生在 rename，
-    失败分支删掉临时文件，目录里不残留任何半成品。
+    编码与写盘都已成功，失败只发生在改名；此时临时文件就是完整产物，不清掉它 —— stderr 记下
+    完整路径供手工恢复。
     """
     folder = workdir / "tmpw-fail"
     folder.mkdir()
@@ -182,12 +182,18 @@ def test_rename_failure_cleans_up_the_written_temp_file(workdir):
     assert "cannot write output" in p.stderr, p.stderr
     assert (folder / "001.png").is_dir()
     assert not list((folder / "001.png").iterdir())
-    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "a.png"]
+
+    tmp = folder / "001.png.iu-tmp"
+    assert str(tmp) in p.stderr  # 临时文件的完整路径写进日志
+    with Image.open(tmp) as img:
+        img.load()
+        assert img.size == (128, 128)
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "001.png.iu-tmp", "a.png"]
 
 
 @needs_engine
 def test_sequence_with_delete_input_keeps_product_and_drops_source(workdir):
-    """序列化重命名 + 删除输入文件：产物 001.jpg 留下，源图 a.png 消失（删源在改名成功之后）"""
+    """序列化重命名 + 删除输入文件：产物 001.jpg 留下，源图 a.png 消失（删源在改名之前）"""
     folder = workdir / "conv"
     folder.mkdir()
     make_png(folder / "a.png")
@@ -197,6 +203,25 @@ def test_sequence_with_delete_input_keeps_product_and_drops_source(workdir):
     assert sorted(x.name for x in folder.iterdir()) == ["001.jpg"]
     assert Image.open(folder / "001.jpg").size == (128, 128)
     assert not [x for x in folder.iterdir() if ".iu-tmp" in x.name]  # 改名成功后不留临时文件
+
+
+@needs_engine
+def test_delete_input_before_rename_keeps_product_when_source_name_matches_target(workdir):
+    """先删后改 + 源名与目标名相同（原地覆盖）：产物不会被删源这一步清掉
+
+    输入就叫 `001.png`，序列化编号后目标同样是 `001.png`。同路径时跳过删源、直接改名覆盖，
+    产物落地且是超分结果；删源若不判同路径，刚写出的产物会连同源一起消失。
+    """
+    folder = workdir / "inplace"
+    folder.mkdir()
+    make_png(folder / "001.png", size=(32, 32))
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none", "--delete-input"])
+    assert p.returncode == 0, p.stderr
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png"]
+    with Image.open(folder / "001.png") as img:
+        img.load()
+        assert img.size == (64, 64)
 
 
 @needs_engine

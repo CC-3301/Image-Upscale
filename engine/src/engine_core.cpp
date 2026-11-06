@@ -18,9 +18,6 @@
 #if _WIN32
 #include <windows.h>
 #include <shlwapi.h> // StrCmpLogicalW：序列化重命名的排序口径（与资源管理器一致）
-#include <process.h> // _getpid：临时文件名的进程隔离串
-#else
-#include <unistd.h> // getpid：临时文件名的进程隔离串
 #endif
 
 // stb 为头文件库，实现必须在唯一包含点展开
@@ -830,16 +827,6 @@ static bool collision_guard_enabled(bool sequence, bool delete_input)
     return !sequence && !delete_input;
 }
 
-// 临时文件名里的进程隔离串：两个进程处理同一输出时各写各的临时文件，不会覆盖对方刚写出的字节
-static unsigned long current_process_id()
-{
-#if _WIN32
-    return (unsigned long)_getpid();
-#else
-    return (unsigned long)getpid();
-#endif
-}
-
 // 单文件输出的命名（工单 02 命名规则）
 // SR 路径：A-(模型名)-[nN-]<倍率|尺寸>；直通缩放：A-(Resize)-<尺寸>
 // 四态：单文件输入没有输出文件夹可挂段 —— 开（两者）/开（文件）把段写在产物文件名上，
@@ -1335,11 +1322,11 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         }
 
         // 编码（按输出格式；质量参数作用于 jpg/webp）—— file_fmt.enc 是本文件的编码器（工单 71）
-        // 写盘顺序固定为「同目录临时文件 → 改名成目标 → 删源」：直接截断写目标时，中断会留下
-        // 半截图（配删除输入文件更可能源与产物都没了）；先写临时文件则目标要么是旧内容、
-        // 要么是完整的新产物。临时名带 .iu-tmp 后缀与进程号 —— 不是图片扩展名，二次运行不会被当成
-        // 输入；两个进程处理同一输出时各写各的临时文件，不会互相覆盖。
-        const path_t tmppath = outpath + L".iu-tmp" + std::to_wstring(current_process_id());
+        // 写盘顺序固定为「同目录临时文件 → 删源（删除输入文件打开时）→ 改名成目标」：直接截断
+        // 写目标时中断会留下半截图；先写临时文件则目标要么是旧内容、要么是完整的新产物。
+        // 先删源再改名，改名失败时完整产物仍留在临时文件里。临时名固定为「目标名 + .iu-tmp」——
+        // 不是图片扩展名，二次运行不会被当成输入。
+        const path_t tmppath = outpath + L".iu-tmp";
         bool encode_ok = false;
         bool write_ok = false;
         if (file_fmt.enc == PATHSTR("jpg"))
@@ -1363,7 +1350,8 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             write_ok = webp_rc == 1;
         }
 
-        // 失败分支都要清掉已写出的临时文件：磁盘满 / 无权限时可能已落下半截字节；成功时 rename 已把它带走
+        // 编码失败与写盘失败都要清掉已写出的临时文件：磁盘满 / 无权限时可能已落下半截字节；
+        // 成功时 rename 已把它带走。改名失败不清 —— 那时临时文件是完整产物（见下）
         auto discard_temp = [&]() {
             std::error_code rec;
             std::filesystem::remove(iu_fs_path(tmppath), rec);
@@ -1381,25 +1369,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             fail(false, "cannot write output", outpath);
             continue;
         }
-        // 改名成目标：同一目录内 rename，不跨盘搬运；失败时目标保持原样，临时文件随后清掉
-        {
-            std::error_code rec;
-            std::filesystem::rename(iu_fs_path(tmppath), iu_fs_path(outpath), rec);
-            if (rec)
-            {
-                discard_temp();
-                fail(false, "cannot write output", outpath);
-                continue;
-            }
-        }
-        // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8，工单 17）
-        log_out("%s -> %s done\n", iu_to_utf8(inpath).c_str(), iu_to_utf8(outpath).c_str());
-        if (single_file && opt.suffix == SUFFIX_FOLDER && path_equal_ci(outpath, inpath))
-            overwrote_input = inpath;
-
-        // 工单 69：删除输入文件 —— 只在**本文件产物写盘成功之后**执行（上面的编码 / 写盘 / 改名
-        // 任一失败就 continue 了，源图因此不会被删）；产物与输入同路径（原地覆盖，工单 58）时跳过删除，
-        // 否则删掉的就是刚写出的产物。删除失败计入 IO 失败并继续处理后续文件，源图保持原样。
+        // 删除输入文件 —— 在改名之前执行：改名失败时源已删，完整产物仍留在临时文件里（路径写进日志）。
+        // 产物与输入同路径（原地覆盖）时跳过删除，否则删掉的就是马上要被覆盖的那个文件。
+        // 删除失败计入 IO 失败并继续处理后续文件：源图保持原样，产物照常改名落地。
         if (opt.delete_input)
         {
             if (path_equal_ci(outpath, inpath))
@@ -1422,6 +1394,22 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
                 }
             }
         }
+        // 改名成目标：同一目录内 rename，不跨盘搬运。失败时目标保持原样，临时文件保留（内容是完整
+        // 产物，路径写进日志供手工恢复），该文件按 IO 失败计
+        {
+            std::error_code rec;
+            std::filesystem::rename(iu_fs_path(tmppath), iu_fs_path(outpath), rec);
+            if (rec)
+            {
+                log_err("temp file kept: %s\n", iu_to_utf8(tmppath).c_str());
+                fail(false, "cannot write output", outpath);
+                continue;
+            }
+        }
+        // 逐文件成功行输出到 stdout（GUI 解析 " done" 后缀显示 ✔；UTF-8）
+        log_out("%s -> %s done\n", iu_to_utf8(inpath).c_str(), iu_to_utf8(outpath).c_str());
+        if (single_file && opt.suffix == SUFFIX_FOLDER && path_equal_ci(outpath, inpath))
+            overwrote_input = inpath;
 
         advance_progress();
     }

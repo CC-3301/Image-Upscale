@@ -1,4 +1,4 @@
-"""工单 69：删除输入文件（`--delete-input`）—— 产物**写盘成功之后**删掉源文件
+"""删除输入文件（`--delete-input`）—— 产物写成完整的同目录临时文件之后、改名成目标之前删掉源文件
 
 判据全部落在文件系统上（引擎 CLI 是唯一测试缝）：
 产物存在 / 源文件是否还在 / 退出码 / stderr 文案。GUI 侧的开关与 setting.ini 无自动化测试（人工验收）。
@@ -205,11 +205,11 @@ def test_delete_input_failure_keeps_source_and_reports_io_error(workdir):
 
 
 @needs_engine
-def test_delete_input_keeps_source_when_write_fails(workdir):
-    """写盘失败：源图必须留着（删除只挂在写盘成功之后），且以 IO 错误码 3 收场
+def test_delete_input_runs_before_rename_and_keeps_the_temp_file(workdir):
+    """删源在改名之前：改名失败时源图已删，完整产物留在 `<目标名>.iu-tmp` 里，退出码 3
 
-    目标文件被独占持有 → 产物写不进目标（写临时文件成功、改名成目标时被拒）。若实现改成
-    「先删再写」，本用例会看到源图消失。
+    目标文件被独占持有 → 写临时文件成功、删源成功、改名成目标被拒。先删后改的代价是源图没了，
+    但产物已完整写进临时文件（路径写进日志），不会两头空。
     """
     folder = workdir / "B"
     folder.mkdir()
@@ -222,6 +222,8 @@ def test_delete_input_keeps_source_when_write_fails(workdir):
         _unlock(handle)
 
     assert p.returncode == 3, (p.returncode, p.stderr)
-    assert inp.exists()
-    # 写是同目录临时文件 + 改名：临时文件写得进、改名到被独占的目标才失败
+    assert not inp.exists()  # 删源先于改名，改名失败不回滚
     assert "cannot write output" in p.stderr, p.stderr
+    tmp = folder / "A.jpg.iu-tmp"
+    assert str(tmp) in p.stderr  # 临时文件的完整路径写进日志
+    assert Image.open(tmp).size == (128, 128)
