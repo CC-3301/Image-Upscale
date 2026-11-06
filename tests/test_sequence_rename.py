@@ -1,0 +1,285 @@
+"""序列化重命名（`--sequence`）：产物名主干换成按自然序发的编号
+
+判据全部落在文件系统上（引擎 CLI 是唯一测试缝）：产物名集合、产物尺寸（用尺寸反推编号顺序）、
+源文件名是否还在、退出码、stderr 文案。GUI 侧开关与 setting.ini 无自动化测试（人工验收）。
+"""
+import pytest
+from PIL import Image
+
+from conftest import MODEL, make_jpg, make_png, needs_engine, run_engine
+
+MODEL_TAG = f"({MODEL})"
+
+
+@needs_engine
+def test_folder_numbers_products_in_natural_order(workdir):
+    """文件夹输入：产物按现有文件名的自然序编号为 001/002/003，数字按大小而不是按字面
+
+    `1.png`(40px) / `2.png`(32px) / `10.png`(48px) 的自然序是 1 → 2 → 10（字面序则是
+    1 → 10 → 2）。产物尺寸 = 原尺寸 ×2，据此反推每个编号拿到的是哪张图。
+    """
+    folder = workdir / "seq"
+    folder.mkdir()
+    make_png(folder / "2.png", size=(32, 32))
+    make_png(folder / "1.png", size=(40, 40))
+    make_png(folder / "10.png", size=(48, 48))
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence"])
+    assert p.returncode == 0, p.stderr
+
+    outdir = workdir / f"seq-{MODEL_TAG}-n0-2.0x"
+    assert sorted(x.name for x in outdir.iterdir()) == ["001.png", "002.png", "003.png"]
+    assert Image.open(outdir / "001.png").size == (80, 80)   # 1.png
+    assert Image.open(outdir / "002.png").size == (64, 64)   # 2.png
+    assert Image.open(outdir / "003.png").size == (96, 96)   # 10.png
+
+
+@needs_engine
+def test_natural_order_ignores_letter_case(workdir):
+    """字母不分大小写：`a.png` 排在 `B.png` 前（字面序会把大写 B 排在前）"""
+    folder = workdir / "case"
+    folder.mkdir()
+    make_png(folder / "B.png", size=(40, 40))
+    make_png(folder / "a.png", size=(32, 32))
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+    assert Image.open(folder / "001.png").size == (64, 64)   # a.png
+    assert Image.open(folder / "002.png").size == (80, 80)   # B.png
+
+
+@needs_engine
+def test_each_folder_numbers_from_001(workdir):
+    """每个子文件夹各自从 001 起，子文件夹本身不改名，源文件名不变"""
+    folder = workdir / "tree"
+    (folder / "inner").mkdir(parents=True)
+    make_png(folder / "a.png")
+    make_png(folder / "b.png")
+    make_png(folder / "inner" / "c.png")
+    make_png(folder / "inner" / "d.png")
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "002.png", "a.png", "b.png", "inner"]
+    assert sorted(x.name for x in (folder / "inner").iterdir()) == ["001.png", "002.png", "c.png", "d.png"]
+    # 源文件名全程不变（源图都还在，只是多了产物）
+    assert {q.relative_to(folder).as_posix() for q in folder.rglob("*.png")} == {
+        "001.png", "002.png", "a.png", "b.png",
+        "inner/001.png", "inner/002.png", "inner/c.png", "inner/d.png",
+    }
+
+
+@needs_engine
+def test_single_file_input_is_numbered_001(workdir):
+    """单文件输入的产物编号就是 001（本目录只有它自己）"""
+    inp = workdir / "photo.png"
+    make_png(inp)
+
+    p = run_engine(["-i", inp, "-f", "png", "-g", "-1", "--sequence"])
+    assert p.returncode == 0, p.stderr
+    out = workdir / f"001-{MODEL_TAG}-n0-2.0x.png"
+    assert out.exists()
+    assert Image.open(out).size == (128, 128)
+    assert inp.exists()
+
+
+@needs_engine
+def test_non_image_files_keep_their_names(workdir):
+    """只有 jpg/jpeg/png/webp 参与编号，其它文件一个字节不动"""
+    folder = workdir / "mix"
+    folder.mkdir()
+    make_png(folder / "a.png")
+    note = folder / "readme.txt"
+    note.write_text("hello", encoding="utf-8")
+    other = folder / "anim.gif"
+    other.write_bytes(b"GIF89a")
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "a.png", "anim.gif", "readme.txt"]
+    assert note.read_text(encoding="utf-8") == "hello"
+    assert other.read_bytes() == b"GIF89a"
+
+
+@needs_engine
+@pytest.mark.parametrize("suffix", ["both", "folder", "file", "none"])
+def test_sequence_stacks_with_suffix_modes(workdir, suffix):
+    """编号与「添加后缀」四态叠加：段的位置由四态决定，产物名主干恒为编号"""
+    folder = workdir / "src"
+    folder.mkdir()
+    make_png(folder / "a.png")
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", suffix])
+    assert p.returncode == 0, p.stderr
+
+    if suffix in ("both", "folder"):
+        # 段在输出文件夹名上，产物文件名干净
+        path = workdir / f"src-{MODEL_TAG}-n0-2.0x" / "001.png"
+    elif suffix == "file":
+        # 不建输出目录，整段带在产物文件名上
+        path = folder / f"001-{MODEL_TAG}-n0-2.0x.png"
+    else:
+        path = folder / "001.png"
+    assert path.exists(), sorted(str(x) for x in workdir.rglob("*.png"))
+    assert Image.open(path).size == (128, 128)
+
+
+@needs_engine
+def test_sequence_pads_to_three_digits_and_grows_past_999(workdir):
+    """3 位补零；文件数超过 999 时自然变 4 位（1000 张 → 最后一个是 1000.png）"""
+    folder = workdir / "many"
+    folder.mkdir()
+    for i in range(1, 1001):
+        make_png(folder / f"p{i:04d}.png", size=(16, 16))
+
+    # 目标尺寸小于原图 → 直通缩放，不跑模型（本用例只验编号面）
+    p = run_engine(["-i", folder, "--width", "8", "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+
+    names = {x.name for x in folder.iterdir() if x.suffix == ".png" and x.name[0].isdigit()}
+    assert len(names) == 1000, len(names)
+    assert {"001.png", "002.png", "003.png", "999.png", "1000.png"} <= names
+    assert "0001.png" not in names  # 超过 999 才变 4 位，不是一律 4 位
+
+
+@needs_engine
+def test_output_goes_through_a_temp_file_then_rename(workdir):
+    """产物经同目录临时文件改名落地：目标内容完整、目录不留残渣、源文件原样保留
+
+    直接截断写目标时，中断会留下半截图；这里只看磁盘结果 —— 目标能完整解码（尺寸对得上）、
+    目录里除源图与产物外没有别的文件、源图字节未变。
+    """
+    folder = workdir / "tmpw"
+    folder.mkdir()
+    make_png(folder / "a.png")
+    before = (folder / "a.png").read_bytes()
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+
+    with Image.open(folder / "001.png") as img:
+        img.load()  # 完整解码：写坏的文件在这里抛异常
+        assert img.size == (128, 128)
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "a.png"]
+    assert (folder / "a.png").read_bytes() == before
+
+
+@needs_engine
+def test_rename_failure_keeps_the_temp_file_and_logs_its_path(workdir):
+    """改名失败（目标路径被一个目录占住）：退出码 3、目标保持原样、完整产物留在 `<目标名>.iu-tmp`
+
+    编码与写盘都已成功，失败只发生在改名；此时临时文件就是完整产物，不清掉它 —— stderr 记下
+    完整路径供手工恢复。
+    """
+    folder = workdir / "tmpw-fail"
+    folder.mkdir()
+    make_png(folder / "a.png")
+    (folder / "001.png").mkdir()
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 3, (p.returncode, p.stderr)
+    assert "cannot write output" in p.stderr, p.stderr
+    assert (folder / "001.png").is_dir()
+    assert not list((folder / "001.png").iterdir())
+
+    tmp = folder / "001.png.iu-tmp"
+    assert str(tmp) in p.stderr  # 临时文件的完整路径写进日志
+    with Image.open(tmp) as img:
+        img.load()
+        assert img.size == (128, 128)
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "001.png.iu-tmp", "a.png"]
+
+
+@needs_engine
+def test_sequence_with_delete_input_keeps_product_and_drops_source(workdir):
+    """序列化重命名 + 删除输入文件：产物 001.jpg 留下，源图 a.png 消失（删源在改名之前）"""
+    folder = workdir / "conv"
+    folder.mkdir()
+    make_png(folder / "a.png")
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--sequence", "--suffix", "none", "--delete-input"])
+    assert p.returncode == 0, p.stderr
+    assert sorted(x.name for x in folder.iterdir()) == ["001.jpg"]
+    assert Image.open(folder / "001.jpg").size == (128, 128)
+    assert not [x for x in folder.iterdir() if ".iu-tmp" in x.name]  # 改名成功后不留临时文件
+
+
+@needs_engine
+def test_delete_input_before_rename_keeps_product_when_source_name_matches_target(workdir):
+    """先删后改 + 源名与目标名相同（原地覆盖）：产物不会被删源这一步清掉
+
+    输入就叫 `001.png`，序列化编号后目标同样是 `001.png`。同路径时跳过删源、直接改名覆盖，
+    产物落地且是超分结果；删源若不判同路径，刚写出的产物会连同源一起消失。
+    """
+    folder = workdir / "inplace"
+    folder.mkdir()
+    make_png(folder / "001.png", size=(32, 32))
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "-v", "--sequence", "--suffix", "none", "--delete-input"])
+    assert p.returncode == 0, p.stderr
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png"]
+    assert "input kept (output overwrites it)" in p.stderr  # 真走了同路径跳过分支
+    with Image.open(folder / "001.png") as img:
+        img.load()
+        assert img.size == (64, 64)
+
+
+@needs_engine
+def test_collision_guard_still_rejects_when_both_switches_are_off(workdir):
+    """两个开关都关：跑前撞车守卫照旧生效（退出码 1、不写出任何产物）"""
+    folder = workdir / "guard"
+    folder.mkdir()
+    make_png(folder / "a.png", size=(32, 32))
+    make_jpg(folder / "a.jpg", size=(32, 32))
+    before = {p.name: p.read_bytes() for p in folder.iterdir()}
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "none"])
+    assert p.returncode == 1, (p.returncode, p.stderr)
+    assert "would overwrite another input file" in p.stderr, p.stderr
+    assert {q.name: q.read_bytes() for q in folder.iterdir()} == before
+
+
+@needs_engine
+def test_collision_guard_is_off_when_delete_input_is_on(workdir):
+    """任一开关打开（这里是「删除输入文件」）：同样的输入一律覆盖、不报错"""
+    folder = workdir / "guard-del"
+    folder.mkdir()
+    make_png(folder / "a.png", size=(32, 32))
+    make_jpg(folder / "a.jpg", size=(32, 32))
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "none", "--delete-input"])
+    assert p.returncode == 0, p.stderr
+    assert "would overwrite another input file" not in p.stderr
+    # a.jpg 先按自己的产物原地覆盖，随后 a.png 的产物盖掉它并删掉 a.png
+    assert sorted(x.name for x in folder.iterdir()) == ["a.jpg"]
+    assert Image.open(folder / "a.jpg").size == (64, 64)
+
+
+@needs_engine
+def test_collision_guard_is_off_when_sequence_is_on(workdir):
+    """任一开关打开（这里是「序列化重命名」）：产物撞上同批另一个输入时也照样覆盖、不报错
+
+    目录里预置 `001.jpg`，另有 `0.png` 排在它前面、拿到编号 001 —— 0.png 的产物就落在输入
+    `001.jpg` 这个路径上（正是跑前守卫要拒绝的「产物撞上同批另一个输入」），序列化模式下直接
+    覆盖；随后 `001.jpg`（已是本次产物）继续编号 002。
+    """
+    folder = workdir / "guard-seq"
+    folder.mkdir()
+    make_png(folder / "0.png", size=(40, 40))
+    make_jpg(folder / "001.jpg", size=(32, 32))
+
+    p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "none", "--sequence"])
+    assert p.returncode == 0, p.stderr
+    assert "would overwrite another input file" not in p.stderr
+    # 001.jpg 已被本次产物覆盖写出（原图 32×32，产物是 0.png 的 40×40 放大到 80×80）
+    assert Image.open(folder / "001.jpg").size == (80, 80)
+    assert sorted(x.name for x in folder.iterdir()) == ["0.png", "001.jpg", "002.jpg"]
+
+
+@needs_engine
+def test_help_documents_sequence_flag():
+    """`--help` 有 `--sequence` 的说明"""
+    p = run_engine(["-h"])
+    assert p.returncode == 0, p.stderr
+    assert "--sequence" in p.stdout

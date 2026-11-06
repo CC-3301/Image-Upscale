@@ -50,6 +50,7 @@ unsigned char* webp_load(const unsigned char* buffer, int len, int* w, int* h, i
     return pixeldata;
 }
 
+// 返回值：1 = 成功；0 = 编码失败；-1 = 写盘失败（打不开或写入不完整）
 int webp_save(const wchar_t* filepath, int w, int h, int c, const unsigned char* pixeldata, float quality)
 {
     int ret = 0;
@@ -79,11 +80,17 @@ int webp_save(const wchar_t* filepath, int w, int h, int c, const unsigned char*
 
     fp = iu_fopen(path_t(filepath), "wb");
     if (!fp)
+    {
+        ret = -1;
         goto RETURN;
+    }
 
     // 写盘失败不能报成功（原实现忽略 fwrite 返回值 → 编码“成功”但文件残缺）
     if (fwrite(output, 1, length, fp) != length)
+    {
+        ret = -1;
         goto RETURN;
+    }
 
     ret = 1;
 

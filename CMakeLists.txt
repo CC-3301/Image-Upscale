@@ -278,6 +278,8 @@ target_link_libraries(iu_engine PRIVATE
     webp
     sharpyuv
     Threads::Threads
+    # StrCmpLogicalW（序列化重命名的排序口径 = 资源管理器的自然序）在 shlwapi 里
+    $<$<CXX_COMPILER_ID:MSVC>:shlwapi>
 )
 
 target_link_libraries(image-upscale PRIVATE
