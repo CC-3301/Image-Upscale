@@ -57,7 +57,6 @@ def test_each_folder_numbers_from_001(workdir):
     make_png(folder / "b.png")
     make_png(folder / "inner" / "c.png")
     make_png(folder / "inner" / "d.png")
-    sources = {p.relative_to(folder).as_posix() for p in folder.rglob("*.png")}
 
     p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
     assert p.returncode == 0, p.stderr
@@ -65,7 +64,10 @@ def test_each_folder_numbers_from_001(workdir):
     assert sorted(x.name for x in folder.iterdir()) == ["001.png", "002.png", "a.png", "b.png", "inner"]
     assert sorted(x.name for x in (folder / "inner").iterdir()) == ["001.png", "002.png", "c.png", "d.png"]
     # 源文件名全程不变（源图都还在，只是多了产物）
-    assert sources <= {p.relative_to(folder).as_posix() for p in folder.rglob("*.png")}
+    assert {q.relative_to(folder).as_posix() for q in folder.rglob("*.png")} == {
+        "001.png", "002.png", "a.png", "b.png",
+        "inner/001.png", "inner/002.png", "inner/c.png", "inner/d.png",
+    }
 
 
 @needs_engine
@@ -143,12 +145,34 @@ def test_sequence_pads_to_three_digits_and_grows_past_999(workdir):
 
 @needs_engine
 def test_output_goes_through_a_temp_file_then_rename(workdir):
-    """产物先写同目录临时文件、再改名成目标：改名失败时目标不被写坏，现场只剩临时文件
+    """产物经同目录临时文件改名落地：目标内容完整、目录不留残渣、源文件原样保留
 
-    造法：目标路径已被一个**目录**占用（改名到目录必然失败）。退出码 3、目标仍是目录、
-    只留下 `001.png.iu-tmp`（若改成直接写目标，这里会是一个半截图文件或被写成目录里的图片）。
+    直接截断写目标时，中断会留下半截图；这里只看磁盘结果 —— 目标能完整解码（尺寸对得上）、
+    目录里除源图与产物外没有别的文件、源图字节未变。
     """
     folder = workdir / "tmpw"
+    folder.mkdir()
+    make_png(folder / "a.png")
+    before = (folder / "a.png").read_bytes()
+
+    p = run_engine(["-i", folder, "-f", "png", "-g", "-1", "--sequence", "--suffix", "none"])
+    assert p.returncode == 0, p.stderr
+
+    with Image.open(folder / "001.png") as img:
+        img.load()  # 完整解码：写坏的文件在这里抛异常
+        assert img.size == (128, 128)
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "a.png"]
+    assert (folder / "a.png").read_bytes() == before
+
+
+@needs_engine
+def test_rename_failure_cleans_up_the_written_temp_file(workdir):
+    """改名失败（目标路径被一个目录占住）：退出码 3、目标保持原样、已写出的临时文件被清掉
+
+    若改成直接写目标，这里会把图片写进那个目录或留下半截图；走临时文件则失败只发生在 rename，
+    失败分支删掉临时文件，目录里不残留任何半成品。
+    """
+    folder = workdir / "tmpw-fail"
     folder.mkdir()
     make_png(folder / "a.png")
     (folder / "001.png").mkdir()
@@ -157,8 +181,8 @@ def test_output_goes_through_a_temp_file_then_rename(workdir):
     assert p.returncode == 3, (p.returncode, p.stderr)
     assert "cannot write output" in p.stderr, p.stderr
     assert (folder / "001.png").is_dir()
-    assert (folder / "001.png.iu-tmp").is_file()
-    assert folder.joinpath("a.png").exists()
+    assert not list((folder / "001.png").iterdir())
+    assert sorted(x.name for x in folder.iterdir()) == ["001.png", "a.png"]
 
 
 @needs_engine
@@ -172,7 +196,7 @@ def test_sequence_with_delete_input_keeps_product_and_drops_source(workdir):
     assert p.returncode == 0, p.stderr
     assert sorted(x.name for x in folder.iterdir()) == ["001.jpg"]
     assert Image.open(folder / "001.jpg").size == (128, 128)
-    assert not list(folder.glob("*.iu-tmp"))  # 改名成功后不留临时文件
+    assert not [x for x in folder.iterdir() if ".iu-tmp" in x.name]  # 改名成功后不留临时文件
 
 
 @needs_engine
@@ -208,16 +232,23 @@ def test_collision_guard_is_off_when_delete_input_is_on(workdir):
 
 @needs_engine
 def test_collision_guard_is_off_when_sequence_is_on(workdir):
-    """任一开关打开（这里是「序列化重命名」）：同样的输入不报错，产物按编号写出"""
+    """任一开关打开（这里是「序列化重命名」）：产物撞上同批另一个输入时也照样覆盖、不报错
+
+    目录里预置 `001.jpg`，另有 `0.png` 排在它前面、拿到编号 001 —— 0.png 的产物就落在输入
+    `001.jpg` 这个路径上（正是跑前守卫要拒绝的「产物撞上同批另一个输入」），序列化模式下直接
+    覆盖；随后 `001.jpg`（已是本次产物）继续编号 002。
+    """
     folder = workdir / "guard-seq"
     folder.mkdir()
-    make_png(folder / "a.png", size=(32, 32))
-    make_jpg(folder / "a.jpg", size=(32, 32))
+    make_png(folder / "0.png", size=(40, 40))
+    make_jpg(folder / "001.jpg", size=(32, 32))
 
     p = run_engine(["-i", folder, "-f", "jpg", "-g", "-1", "--suffix", "none", "--sequence"])
     assert p.returncode == 0, p.stderr
     assert "would overwrite another input file" not in p.stderr
-    assert sorted(x.name for x in folder.iterdir()) == ["001.jpg", "002.jpg", "a.jpg", "a.png"]
+    # 001.jpg 已被本次产物覆盖写出（原图 32×32，产物是 0.png 的 40×40 放大到 80×80）
+    assert Image.open(folder / "001.jpg").size == (80, 80)
+    assert sorted(x.name for x in folder.iterdir()) == ["0.png", "001.jpg", "002.jpg"]
 
 
 @needs_engine

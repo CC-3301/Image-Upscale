@@ -18,6 +18,9 @@
 #if _WIN32
 #include <windows.h>
 #include <shlwapi.h> // StrCmpLogicalW：序列化重命名的排序口径（与资源管理器一致）
+#include <process.h> // _getpid：临时文件名的进程隔离串
+#else
+#include <unistd.h> // getpid：临时文件名的进程隔离串
 #endif
 
 // stb 为头文件库，实现必须在唯一包含点展开
@@ -743,9 +746,10 @@ struct OrdinalLess
     }
 };
 
-// 序列化重命名的排序口径：与 Windows 资源管理器一致 —— 数字按大小、字母不分大小写、中文按拼音。
-// Windows 用 StrCmpLogicalW（资源管理器自身用的比较器：数字按值、忽略大小写、中文按 locale 的拼音序）；
-// 非 Windows 只有开发与测试用途，按「数字按值 → ASCII 字母忽略大小写 → 其余按序数」近似（不做拼音）
+// 序列化重命名的排序口径：数字按大小、字母不分大小写；中文的拼音序来自 Windows 系统 collation
+// （StrCmpLogicalW 是资源管理器自身用的比较器，中文按系统 locale 排），只在 Windows 上成立。
+// 非 Windows 分支只有开发与测试用途，按「数字按值 → ASCII 字母忽略大小写 → 其余按序数」近似，
+// 不做拼音：排序结果不承诺与 Windows 一致
 static int compare_natural(const std::wstring& a, const std::wstring& b)
 {
 #if _WIN32
@@ -809,6 +813,31 @@ static bool path_equal_ci(const path_t& a, const path_t& b)
     const std::wstring kb = canonical_path_key(b);
     const OrdinalLess less;
     return !less(ka, kb) && !less(kb, ka); // 等价 = 互不小于
+}
+
+// 序列化重命名的产物名主干：目录内按自然序从 001 起编号，3 位补零，序号超过 999 时自然变 4 位
+static std::wstring sequence_stem(int index)
+{
+    wchar_t buf[16];
+    swprintf(buf, 16, L"%03d", index);
+    return buf;
+}
+
+// 产物撞车守卫的门控（跑前守卫与运行期守卫共用同一判据）：「序列化重命名」与「删除输入文件」
+// 都关时才拒绝撞车；任一打开即用户主动进入命名/清理模式，产物一律覆盖、不报错
+static bool collision_guard_enabled(bool sequence, bool delete_input)
+{
+    return !sequence && !delete_input;
+}
+
+// 临时文件名里的进程隔离串：两个进程处理同一输出时各写各的临时文件，不会覆盖对方刚写出的字节
+static unsigned long current_process_id()
+{
+#if _WIN32
+    return (unsigned long)_getpid();
+#else
+    return (unsigned long)getpid();
+#endif
 }
 
 // 单文件输出的命名（工单 02 命名规则）
@@ -1088,7 +1117,7 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         {
             std::filesystem::path in = iu_fs_path(inpath);
             // 序列化重命名：单文件输入的产物编号恒为 001（本目录只处理它一张）
-            const std::wstring stem = opt.sequence ? L"001" : iu_fs_path_w(in.stem());
+            const std::wstring stem = opt.sequence ? sequence_stem(1) : iu_fs_path_w(in.stem());
             outpath = single_file_outpath(in, stem, naming, file_denoise_seg, file_fmt.ext, !use_engine,
                                           opt.suffix);
         }
@@ -1105,9 +1134,9 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         //      两路整块跳过，这里补上；
         //   ② 产物与**已写出的产物**同路 —— 如 AUTO 逐文件档位下两个同名输入解析出同一档位。
         // 每个序号只过一次本循环：①比序号即排除「产物覆盖自己」，②命中即必是别的输入写的。
-        // 门控与跑前守卫同一口径：「序列化重命名」与「删除输入文件」都关时才拒绝；任一打开即
-        // 用户主动进入命名/清理模式，一律覆盖、不报错。
-        if (!opt.sequence && !opt.delete_input)
+        // 门控与跑前守卫同一判据（collision_guard_enabled）：「序列化重命名」与「删除输入文件」
+        // 都关时才拒绝；任一打开即用户主动进入命名/清理模式，一律覆盖、不报错。
+        if (collision_guard_enabled(opt.sequence, opt.delete_input))
         {
             const std::wstring key = canonical_path_key(outpath);
             auto in_it = input_index.find(key);
@@ -1124,9 +1153,8 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
             written[key] = (size_t)i;
         }
 
-        // 工单 58：产物路径与输入路径相同（同目录 + 同扩展名，NTFS 下大小写不敏感）时直接原地覆盖
-        // 源文件，与 spec 用户故事 18「同名直接覆盖」一致，不再有例外（工单 50 定案 4 的拒写守卫
-        // 已撤销：无二次确认、无提示、不备份源图）。
+        // 产物路径与输入路径相同（同目录 + 同扩展名，NTFS 下大小写不敏感）时直接原地覆盖源文件：
+        // 同名即直接覆盖，没有例外 —— 无二次确认、无提示，也不备份源图。
         // 原地覆盖的安全性：输入在解码阶段一次性读入内存后立即 fclose（本函数上方解码块），写盘发生在
         // 推理/直通缩放与 alpha 合成之后，中途不再读输入路径 —— 不存在「写到一半又被读」的通路。
 
@@ -1309,41 +1337,57 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         // 编码（按输出格式；质量参数作用于 jpg/webp）—— file_fmt.enc 是本文件的编码器（工单 71）
         // 写盘顺序固定为「同目录临时文件 → 改名成目标 → 删源」：直接截断写目标时，中断会留下
         // 半截图（配删除输入文件更可能源与产物都没了）；先写临时文件则目标要么是旧内容、
-        // 要么是完整的新产物。临时名带 .iu-tmp 后缀 —— 不是图片扩展名，二次运行不会被当成输入。
-        const path_t tmppath = outpath + L".iu-tmp";
-        bool save_ok = false;
+        // 要么是完整的新产物。临时名带 .iu-tmp 后缀与进程号 —— 不是图片扩展名，二次运行不会被当成
+        // 输入；两个进程处理同一输出时各写各的临时文件，不会互相覆盖。
+        const path_t tmppath = outpath + L".iu-tmp" + std::to_wstring(current_process_id());
+        bool encode_ok = false;
+        bool write_ok = false;
         if (file_fmt.enc == PATHSTR("jpg"))
         {
             MemBuffer buf;
-            if (stbi_write_jpg_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, opt.quality))
-            {
-                save_ok = write_file_wide(tmppath, buf.data.data(), buf.data.size());
-            }
+            encode_ok = stbi_write_jpg_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, opt.quality) != 0;
+            if (encode_ok)
+                write_ok = write_file_wide(tmppath, buf.data.data(), buf.data.size());
         }
         else if (file_fmt.enc == PATHSTR("png"))
         {
             MemBuffer buf;
-            if (stbi_write_png_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, outimage.w * outimage.elempack))
-            {
-                save_ok = write_file_wide(tmppath, buf.data.data(), buf.data.size());
-            }
+            encode_ok = stbi_write_png_to_func(stb_write_callback, &buf, outimage.w, outimage.h, outimage.elempack, outimage.data, outimage.w * outimage.elempack) != 0;
+            if (encode_ok)
+                write_ok = write_file_wide(tmppath, buf.data.data(), buf.data.size());
         }
-        else // webp
+        else // webp：编码与写盘合成一次调用，用返回值区分是哪一步失败
         {
-            save_ok = webp_save(tmppath.c_str(), outimage.w, outimage.h, outimage.elempack, (const unsigned char*)outimage.data, (float)opt.quality) == 1;
+            const int webp_rc = webp_save(tmppath.c_str(), outimage.w, outimage.h, outimage.elempack, (const unsigned char*)outimage.data, (float)opt.quality);
+            encode_ok = webp_rc >= 0;
+            write_ok = webp_rc == 1;
         }
 
-        if (!save_ok)
+        // 失败分支都要清掉已写出的临时文件：磁盘满 / 无权限时可能已落下半截字节；成功时 rename 已把它带走
+        auto discard_temp = [&]() {
+            std::error_code rec;
+            std::filesystem::remove(iu_fs_path(tmppath), rec);
+        };
+        if (!encode_ok)
         {
+            discard_temp();
             fail(false, "encode image failed", outpath);
             continue;
         }
-        // 改名成目标：同一目录内 rename，不跨盘搬运；失败时目标保持原样，现场只留临时文件
+        if (!write_ok)
+        {
+            // 编码已成功，失败的是写盘（磁盘满 / 无权限 / 路径不可写），报编码失败会误导
+            discard_temp();
+            fail(false, "cannot write output", outpath);
+            continue;
+        }
+        // 改名成目标：同一目录内 rename，不跨盘搬运；失败时目标保持原样，临时文件随后清掉
         {
             std::error_code rec;
             std::filesystem::rename(iu_fs_path(tmppath), iu_fs_path(outpath), rec);
             if (rec)
             {
+                discard_temp();
                 fail(false, "cannot write output", outpath);
                 continue;
             }
@@ -1353,8 +1397,8 @@ static int run_files(Engine* engine, const std::wstring& models_dir, const Model
         if (single_file && opt.suffix == SUFFIX_FOLDER && path_equal_ci(outpath, inpath))
             overwrote_input = inpath;
 
-        // 工单 69：删除输入文件 —— 只在**本文件产物写盘成功之后**执行（上面的 save_ok 分支不通过
-        // 就 continue 了，源图因此不会被删）；产物与输入同路径（原地覆盖，工单 58）时跳过删除，
+        // 工单 69：删除输入文件 —— 只在**本文件产物写盘成功之后**执行（上面的编码 / 写盘 / 改名
+        // 任一失败就 continue 了，源图因此不会被删）；产物与输入同路径（原地覆盖，工单 58）时跳过删除，
         // 否则删掉的就是刚写出的产物。删除失败计入 IO 失败并继续处理后续文件，源图保持原样。
         if (opt.delete_input)
         {
@@ -1804,9 +1848,7 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
             path_t stem;
             if (sequence)
             {
-                wchar_t buf[16];
-                swprintf(buf, 16, L"%03d", ++sequence_counter[iu_fs_path_w(pair.second.parent_path())]);
-                stem = buf;
+                stem = sequence_stem(++sequence_counter[iu_fs_path_w(pair.second.parent_path())]);
             }
             else
             {
@@ -1829,9 +1871,9 @@ static int iu_run_impl(int argc, const wchar_t* const* argv)
         // 逐文件档位（AUTO 档位不一致）时产物名在运行期才定 → 这一路跳过跑前检查，由 run_files 的
         // 运行期守卫兜住（同一个 canonical 键，产物撞输入与产物撞产物两条都判）；开（文件）在目标尺寸
         // 模式下逐文件才知走 SR 还是直通缩放（产物名分别是 -(模型名)-… 与 -(Resize)-…），跑前同样算不准。
-        // 门控：「序列化重命名」与「删除输入文件」都关时才生效；任一打开即用户主动进入命名/清理
-        // 模式，产物一律覆盖、不报错（spec「冲突策略」）
-        const bool collision_guard = !sequence && !delete_input;
+        // 门控与运行期守卫同一判据（collision_guard_enabled）：「序列化重命名」与「删除输入文件」
+        // 都关时才生效；任一打开即用户主动进入命名/清理模式，产物一律覆盖、不报错
+        const bool collision_guard = collision_guard_enabled(sequence, delete_input);
         const bool name_unknown_before_run = denoise_per_file || (suffix == SUFFIX_FILE && target_mode);
         if (collision_guard && !name_unknown_before_run)
         {
