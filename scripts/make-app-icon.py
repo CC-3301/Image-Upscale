@@ -13,8 +13,8 @@ from pathlib import Path
 import PIL
 from PIL import Image, ImageDraw
 
-BG = (0x24, 0x26, 0x2B)      # 石墨黑底
-FG = (0xFF, 0xFF, 0xFF)      # 白色字形
+BG = (0xEF, 0xE7, 0xDA)      # 米白底
+FG = (0x3B, 0x32, 0x2B)      # 深棕字形
 SS = 4                       # 超采样倍率（绘制后按块平均降采样）
 HEIGHT_RATIO = 0.55          # 字形外接方框高 / 画布边长
 CORNER_RATIO = 0.1855        # 圆角半径 / 画布边长
@@ -80,7 +80,7 @@ def tile_mask(size):
 
 
 def icon(size):
-    """按边长生成一张 RGBA 图标：圆角方底 + 白色字形"""
+    """按边长生成一张 RGBA 图标：圆角方底 + 深棕字形"""
     out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     out.paste(Image.new("RGBA", (size, size), BG + (255,)), (0, 0), tile_mask(size))
     out.paste(Image.new("RGBA", (size, size), FG + (255,)), (0, 0), glyph_mask(size))
