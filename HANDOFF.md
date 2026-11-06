@@ -4,19 +4,20 @@
 
 ## 当前状态
 
-v0.3.2 的三个需求已实现并合入 `main`，引擎侧门禁全绿（149 passed / 12 skipped）。**GUI 未在本机构建，待 Windows 打包后人工验收。**
+v0.3.2 的三个需求已实现并合入 `main`，Windows 上完成引擎构建、全量回归（161 passed，无 skip）与 portable 打包，产物 `dist\v0.3.2\Image-Upscale-win64.zip`。**GUI 待人工验收。**
 
 ## 本批交付
 
 - LOGO 重制：石墨黑 `#24262B` + 白色几何 IU、字母占比 55%，替换 `app.png` / `app.ico`；生成脚本 `scripts/make-app-icon.py`。
 - 添加后缀四态：引擎 `--suffix both|folder|file|none`（`--no-rename` 保留为 `none` 同义），GUI 下拉，`LastAddSuffix` 旧值迁移。
 - 序列化重命名：引擎 `--sequence`，产物按资源管理器口径编号 `001…`，源文件名不变；写盘走 `<目标名>.iu-tmp`，顺序为「写 tmp → 删源 → 改名」。
+- 原地覆盖保留源文件名的拼写：改名落地前取目标在盘上的真实目录项名，`A.PNG` 配 `-f png` 不再被改写成 `A.png`（NTFS 大小写不敏感）。
 
 ## 待办
 
-1. **Windows 上打包验收**：`pwsh -ExecutionPolicy Bypass -File scripts\package.ps1 -Version v0.3.2`，产物在 `dist\v0.3.2\`。
-2. 人工验收项：三个下拉不换行、四态产物命名、序列化编号、exe 与窗口图标。
-3. 验收通过后再决定是否推送与打 tag。
+1. **人工验收**：解压 `dist\v0.3.2\Image-Upscale-win64.zip`，看三个下拉不换行、四态产物命名、序列化编号、exe 与窗口图标（窗口标题应显示 v0.3.2）。
+2. 验收通过后再决定是否推送与打 tag。
+3. 待维护者批准后补 `docs/lessons.md`：① 便携 MSVC 布局不含 Windows SDK（`windows.h` 缺失），需单独装；② 写盘「tmp → rename」在大小写不敏感的文件系统上会改写目录项拼写。
 
 ## 协作约束
 
@@ -28,7 +29,8 @@ v0.3.2 的三个需求已实现并合入 `main`，引擎侧门禁全绿（149 pa
 
 ## 验证入口
 
-引擎构建 `scripts/engine-build.sh`（Linux，脚本无执行位，用 `bash` 调）；测试 `IU_ENGINE=<仓库>/bld/image-upscale python -m pytest tests -q`。
+引擎构建：Windows 用 `scripts\engine-build.bat`（需 `IU_VS_PATH` / `VULKAN_SDK`，另需 Windows SDK 提供 `windows.h`）；Linux 用 `bash scripts/engine-build.sh`（脚本无执行位）。
+测试：`IU_ENGINE=<仓库>/bld/image-upscale.exe python -m pytest tests -q`——Windows 161 passed，Linux 149 passed / 12 skipped（大小写不敏感用例在 Windows 才跑）。
 GUI 为 WPF，仅 Windows 可构建与人工验收；引擎行为走 CLI 薄壳的进程边界测试。
 
 ## 建议技能
