@@ -1,4 +1,4 @@
-"""工单 69：删除输入文件（`--delete-input`）—— 产物**写盘成功之后**删掉源文件
+"""删除输入文件（`--delete-input`）—— 产物写成完整的同目录临时文件之后、改名成目标之前删掉源文件
 
 判据全部落在文件系统上（引擎 CLI 是唯一测试缝）：
 产物存在 / 源文件是否还在 / 退出码 / stderr 文案。GUI 侧的开关与 setting.ini 无自动化测试（人工验收）。
@@ -57,8 +57,8 @@ def _open_shared_rw(path):
 
 
 @needs_engine
-def test_delete_input_removes_source_after_output_is_written(workdir):
-    """单文件 + 异格式：产物 A.jpg 写出后源图 A.png 消失（退出码 0）"""
+def test_delete_input_removes_source_after_temp_write_before_rename(workdir):
+    """单文件 + 异格式：产物写成完整 tmp 后、改名成目标前源图 A.png 被删（退出码 0）"""
     folder = workdir / "B"
     folder.mkdir()
     inp = folder / "A.png"
@@ -205,10 +205,11 @@ def test_delete_input_failure_keeps_source_and_reports_io_error(workdir):
 
 
 @needs_engine
-def test_delete_input_keeps_source_when_write_fails(workdir):
-    """写盘失败：源图必须留着（删除只挂在写盘成功之后），且以 IO 错误码 3 收场
+def test_delete_input_runs_before_rename_and_keeps_the_temp_file(workdir):
+    """删源在改名之前：改名失败时源图已删，完整产物留在 `<目标名>.iu-tmp` 里，退出码 3
 
-    目标文件被独占持有 → 编码写盘必失败。若实现改成「先删再写」，本用例会看到源图消失。
+    目标文件被独占持有 → 写临时文件成功、删源成功、改名成目标被拒。先删后改的代价是源图没了，
+    但产物已完整写进临时文件（路径写进日志），不会两头空。
     """
     folder = workdir / "B"
     folder.mkdir()
@@ -221,5 +222,32 @@ def test_delete_input_keeps_source_when_write_fails(workdir):
         _unlock(handle)
 
     assert p.returncode == 3, (p.returncode, p.stderr)
-    assert inp.exists()
-    assert "encode image failed" in p.stderr
+    assert not inp.exists()  # 删源先于改名，改名失败不回滚
+    assert "cannot write output" in p.stderr, p.stderr
+    tmp = folder / "A.jpg.iu-tmp"
+    assert str(tmp) in p.stderr  # 临时文件的完整路径写进日志
+    assert Image.open(tmp).size == (128, 128)
+
+
+@needs_engine
+def test_write_failure_keeps_source_and_leaves_no_temp_file(workdir):
+    """写盘失败（临时名被一个目录占住）：源图仍在、退出码 3、目录里不留 `.iu-tmp`
+
+    删源在写盘成功之后：写盘没成功就不删源，源图原样保留；写盘失败分支负责清掉临时文件
+    （这里是占位目录，引擎删得掉就自己删，删不掉由本用例收尾后再断言没留下东西）。
+    """
+    folder = workdir / "B"
+    folder.mkdir()
+    inp = folder / "A.png"
+    make_png(inp)
+    blocker = folder / "A.jpg.iu-tmp"
+    blocker.mkdir()  # 占住临时名，让 _wfopen(..., L"wb") 必然失败
+
+    p = run_engine(["-i", inp, "-f", "jpg", "-g", "-1", "--no-rename", "--delete-input"])
+    if blocker.exists():
+        blocker.rmdir()
+
+    assert p.returncode == 3, (p.returncode, p.stderr)
+    assert "cannot write output" in p.stderr, p.stderr
+    assert inp.exists()  # 写盘失败，删源那一步根本没走到
+    assert not [x for x in folder.iterdir() if ".iu-tmp" in x.name]

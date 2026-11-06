@@ -130,15 +130,18 @@
             </StackPanel>
         </GroupBox>
 
-        <!-- 文件处理：产物命名与源文件去留。两个控件都与模型/尺寸/编码无关 ——
+        <!-- 文件处理：产物命名与源文件去留。三个控件都与模型/尺寸/编码无关，任何输入状态下都不灰置 ——
              添加后缀（四态：开（两者）/开（文件夹）/开（文件）/关）决定段落在输出文件夹名还是产物文件名上；
-             删除输入文件开启后引擎在产物写盘成功时删掉源文件（产物与输入同路径即原地覆盖时跳过）。
-             两个下拉的项都不写在这里 —— 分别由 SettingsStore.AddSuffixLabels / SwitchLabels 填充（单一定义来源惯例）。
+             删除输入文件开启后引擎在产物写盘成功时删掉源文件（产物与输入同路径即原地覆盖时跳过）；
+             序列化重命名开启后产物名主干换成 001/002/…（按现有文件名的自然序发号，每个目录各自从 001 起）。
+             三个下拉的项都不写在这里 —— 添加后缀走 SettingsStore.AddSuffixLabels，两个开/关开关走
+               SwitchLabels（单一定义来源惯例）。
              控件宽：添加后缀下拉 106px，由最长项「开（文件夹）」决定（6 个字 = 72px + 控件开销 28px，
-               与「降采样方式」同口径：100px 裁字、>106 无收益）。
+               与「降采样方式」同口径：100px 裁字、>106 无收益）；两个开/关下拉 90px。
              行宽口径同「降噪与输出」注释（780×570 窗口 = MinWidth×MinHeight、读子控件矩形；可用宽 720px）：
-               按同口径推算本行两下拉约 366px（添加后缀 5 字 + 106px、删除输入文件 7 字 + 90px、组间 20px）；
-               再加入「序列化重命名」后约 560px ≤ 720px → 780px 最窄窗口下三个下拉同排不换行。 -->
+               按同口径（中文字约 12.5px/个、组间 20px）推算本行三组约 564px ——
+               添加后缀（5 字 ≈62.5 + 106）、删除输入文件（7 字 ≈87.5 + 90）、序列化重命名（7 字 ≈87.5 + 90）；
+               564px ≤ 720px（余 156px）→ 780px 最窄窗口下三个下拉同排不换行。 -->
         <GroupBox Grid.Row="4" Header="文件处理" Padding="8" Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal">
                 <StackPanel Orientation="Horizontal">
@@ -148,6 +151,10 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="删除输入文件：" VerticalAlignment="Center" Margin="20,0,0,0"/>
                     <ComboBox x:Name="DeleteInputBox" Width="90" SelectionChanged="OnDeleteInputChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="序列化重命名：" VerticalAlignment="Center" Margin="20,0,0,0"/>
+                    <ComboBox x:Name="SequenceRenameBox" Width="90" SelectionChanged="OnSequenceRenameChanged"/>
                 </StackPanel>
             </StackPanel>
         </GroupBox>
