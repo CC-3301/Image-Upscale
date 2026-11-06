@@ -6,6 +6,9 @@ out/
 # 模型文件（经 scripts/fetch-models.ps1 获取，不入库）
 models/
 
+# 交接文档（本机维护，不入库）
+HANDOFF.md
+
 # Python 测试
 __pycache__/
 .venv/
