@@ -1,4 +1,4 @@
-"""生成 GUI 的 exe / 窗口图标：石墨黑圆角方底 + 白色几何 IU。
+"""生成 GUI 的 exe / 窗口图标：米白圆角方底 + 深棕几何 IU。
 
 产物（相对仓库根目录，重跑覆盖）：
     gui/assets/app.png   512×512
@@ -80,11 +80,16 @@ def tile_mask(size):
 
 
 def icon(size):
-    """按边长生成一张 RGBA 图标：圆角方底 + 深棕字形"""
-    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    out.paste(Image.new("RGBA", (size, size), BG + (255,)), (0, 0), tile_mask(size))
-    out.paste(Image.new("RGBA", (size, size), FG + (255,)), (0, 0), glyph_mask(size))
-    return out
+    """按边长生成一张 RGBA 图标：圆角方底 + 深棕字形
+
+    颜色与 alpha 分开合成：paste 带 mask 时 RGB 也会被乘上 mask（透明画布上是黑），
+    半透明边缘因此被压暗，缩到 16px 就是四角黑边。改用 putalpha + alpha_composite。
+    """
+    tile = Image.new("RGBA", (size, size), BG + (0,))
+    tile.putalpha(tile_mask(size))
+    glyph = Image.new("RGBA", (size, size), FG + (0,))
+    glyph.putalpha(glyph_mask(size))
+    return Image.alpha_composite(tile, glyph)
 
 
 def require_pillow():
