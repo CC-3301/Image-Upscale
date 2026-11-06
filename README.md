@@ -4,12 +4,6 @@
 
 术语表见 [GLOSSARY.md](./GLOSSARY.md)；关键决策见 [docs/adr/](./docs/adr/)；踩坑清单见 [docs/lessons.md](./docs/lessons.md)；规格与工单见 [.scratch/image-upscale/](./.scratch/image-upscale/)。
 
-## 当前状态
-
-**已发布**：从 [Releases](https://github.com/CC-3301/Image-Upscale/releases/latest) 下载最新 zip 解压即用（根目录仅 `ImageUpscale.exe` + `models/` + `NOTICE.md`，引擎已融合进单文件；MIT 许可与第三方声明见包内 NOTICE.md，完整文档见仓库）。
-
-后续迭代工单见 [.scratch/image-upscale/issues/](./.scratch/image-upscale/issues/)；全部工单状态以文件内 `Status:` 行为准。
-
 ## 构建（Windows）
 
 前置：Visual Studio 2022（C++ 桌面开发 + "C++ CMake 工具"组件）、Vulkan SDK、.NET 8 SDK。标准安装下脚本自动探测工具链；便携/非标准安装用环境变量覆盖（`IU_VS_PATH` / `IU_CMAKE` / `IU_DOTNET`），详见 [docs/lessons.md](./docs/lessons.md) 的「Windows 工具链」一节。
@@ -51,8 +45,6 @@ python3 -m pytest tests -q
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/fetch-models.ps1
 ```
-
-打包模型（`models/`，不入库）的许可出处（工单 09）：
 
 | 模型（清单 id） | 来源 | 许可 / 再分发 |
 | --- | --- | --- |
