@@ -8,7 +8,7 @@ v0.3.2 的三个需求已实现并合入 `main`，Windows 上完成引擎构建�
 
 ## 本批交付
 
-- LOGO 重制：石墨黑 `#24262B` + 白色几何 IU、字母占比 55%，替换 `app.png` / `app.ico`；生成脚本 `scripts/make-app-icon.py`。
+- LOGO 重制：米白底 `#EFE7DA` + 深棕几何 IU `#3B322B`、字母占比 55%，替换 `app.png` / `app.ico`；生成脚本 `scripts/make-app-icon.py`。
 - 添加后缀四态：引擎 `--suffix both|folder|file|none`（`--no-rename` 保留为 `none` 同义），GUI 下拉，`LastAddSuffix` 旧值迁移。
 - 序列化重命名：引擎 `--sequence`，产物按资源管理器口径编号 `001…`，源文件名不变；写盘走 `<目标名>.iu-tmp`，顺序为「写 tmp → 删源 → 改名」。
 - 原地覆盖保留源文件名的拼写：改名落地前取目标在盘上的真实目录项名，`A.PNG` 配 `-f png` 不再被改写成 `A.png`（NTFS 大小写不敏感）。
